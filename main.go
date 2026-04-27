@@ -60,6 +60,10 @@ func main() {
 			if askDelete(title) {
 				deleteSession(cmd, id)
 			}
+		case "ctrl-t":
+			dir := parts[3]
+			ctrlTmux(agentPath, id, dir)
+			os.Exit(0)
 		default:
 			resumeSession(cmd, id)
 			os.Exit(0)
@@ -128,9 +132,10 @@ func runFzf(lines []string) (string, string, error) {
 		"--border-label", " opencode sessions ",
 		"--border",
 		"--prompt", "⚡  ",
+		"--header", "\033[90m  ^d\033[0m delete  •  \033[90m^t\033[0m tmux  •  \033[90menter\033[0m resume  ",
 		"--delimiter", "\t",
 		"--with-nth", "1,3,4",
-		"--expect=ctrl-d",
+		"--expect=ctrl-d,ctrl-t",
 	}
 
 	cmd := exec.Command("fzf", args...)
@@ -218,6 +223,46 @@ func askDelete(title string) bool {
 	fmt.Fprintln(os.Stderr)
 
 	return confirmed
+}
+
+func ctrlTmux(agentPath, id, dir string) {
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: tmux not found in PATH")
+		return
+	}
+
+	sessionName := filepath.Base(dir)
+	if sessionName == "" || sessionName == "." || sessionName == "/" {
+		sessionName = "default"
+	}
+	sessionName = strings.ReplaceAll(sessionName, "/", "-")
+	sessionName = strings.ReplaceAll(sessionName, "\\", "-")
+
+	exists := exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() == nil
+	if !exists {
+		c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+			return
+		}
+	}
+
+	c := exec.Command(tmuxPath, "new-window", "-t", sessionName, "-c", dir, agentPath, "-s", id)
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
+		return
+	}
+
+	if os.Getenv("TMUX") != "" {
+		c := exec.Command(tmuxPath, "switch-client", "-t", sessionName)
+		c.Stderr = os.Stderr
+		_ = c.Run()
+	} else {
+		syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", sessionName}, os.Environ())
+	}
 }
 
 func deleteSession(cmd, id string) {
