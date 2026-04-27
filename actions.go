@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -76,7 +77,18 @@ func ctrlTmux(agentPath, id, dir string) {
 		c.Stderr = os.Stderr
 		_ = c.Run()
 	} else {
-		c := exec.Command(tmuxPath, "new-window", "-t", sessionName, "-c", dir, agentPath, "-s", id)
+		out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
+		maxIdx := -1
+		for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			s = strings.TrimSpace(s)
+			if s == "" {
+				continue
+			}
+			if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
+				maxIdx = n
+			}
+		}
+		c := exec.Command(tmuxPath, "new-window", "-t", fmt.Sprintf("%s:%d", sessionName, maxIdx+1), "-c", dir, "--", agentPath, "-s", id)
 		c.Stderr = os.Stderr
 		if err := c.Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
