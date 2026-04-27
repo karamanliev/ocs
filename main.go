@@ -2,34 +2,38 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/term"
+	_ "modernc.org/sqlite"
 )
 
 type Session struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	Updated   int64  `json:"updated"`
-	Created   int64  `json:"created"`
-	ProjectID string `json:"projectId"`
-	Directory string `json:"directory"`
+	ID        string
+	Title     string
+	Updated   int64
+	Directory string
 }
 
 func main() {
-	cmd := os.Getenv("AGENT_CMD")
-	if cmd == "" {
-		cmd = "ocv"
+	agentPath, err := exec.LookPath("opencode")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Warning: opencode command not found in PATH")
+		os.Exit(1)
 	}
 
+	dbPath := getDBPath()
+
 	for {
-		sessions, err := getSessions(cmd)
+		sessions, err := getSessions(dbPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error fetching sessions: %v\n", err)
 			os.Exit(1)
@@ -58,30 +62,59 @@ func main() {
 		switch key {
 		case "ctrl-d":
 			if askDelete(title) {
-				deleteSession(cmd, id)
+				deleteSession(agentPath, id)
 			}
 		case "ctrl-t":
 			dir := parts[3]
 			ctrlTmux(agentPath, id, dir)
 			os.Exit(0)
 		default:
-			resumeSession(cmd, id)
+			resumeSession(agentPath, id)
 			os.Exit(0)
 		}
 	}
 }
 
-func getSessions(cmd string) ([]Session, error) {
-	c := exec.Command(cmd, "session", "list", "--format", "json")
-	out, err := c.Output()
+func getDBPath() string {
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return filepath.Join(xdg, "opencode", "opencode.db")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving home directory: %v\n", err)
+		os.Exit(1)
+	}
+	return filepath.Join(home, ".local", "share", "opencode", "opencode.db")
+}
+
+func getSessions(dbPath string) ([]Session, error) {
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, err
 	}
-	var sessions []Session
-	if err := json.Unmarshal(out, &sessions); err != nil {
+	defer db.Close()
+
+	rows, err := db.Query(`
+		SELECT s.id, s.title, s.time_updated, p.worktree
+		FROM session s
+		JOIN project p ON p.id = s.project_id
+		WHERE s.parent_id IS NULL
+		ORDER BY s.time_updated DESC
+	`)
+	if err != nil {
 		return nil, err
 	}
-	return sessions, nil
+	defer rows.Close()
+
+	var sessions []Session
+	for rows.Next() {
+		var s Session
+		if err := rows.Scan(&s.ID, &s.Title, &s.Updated, &s.Directory); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, s)
+	}
+	return sessions, rows.Err()
 }
 
 func formatSessions(sessions []Session) []string {
