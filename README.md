@@ -8,7 +8,7 @@ A fast terminal UI for managing [OpenCode](https://opencode.ai) sessions.
 
 - **Dual mode** — `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
 - **Fuzzy filtering** — type `/` to filter sessions in real time
-- **Preview** — `tab` to peek the first user message of any session
+- **Preview pane** — visible by default, toggle with `tab`, auto-moves right or below based on terminal width
 - **Batch delete** — `ctrl+d` to toggle checkboxes, `enter` to confirm
 - **Rename** — `ctrl+r` to rename a session inline
 - **Running indicator** — green dot shows which sessions have active tmux panes
@@ -38,6 +38,7 @@ Requires Go 1.22+.
 ```bash
 ocs              # launch in ALL mode
 ocs -tmux        # launch directly in TMUX mode
+ocs -no-preview  # launch with preview pane hidden
 ```
 
 ## Modes
@@ -45,7 +46,6 @@ ocs -tmux        # launch directly in TMUX mode
 - **ALL** — the default. Pressing `enter` resumes the session directly. Press `alt+enter` or `ctrl+o` to open it in tmux instead.
 - **TMUX** — `enter` always opens the session in a tmux window. The title bar shows `[tmux]` and the UI shifts to purple tones.
 
-Use `-tmux` to start directly in TMUX mode.
 
 ## Theme
 
@@ -59,6 +59,15 @@ The UI adapts its palette to the current mode:
 | Cursor highlight | blue-tinted | purple-tinted |
 | Footer keys | steel blue | dusty purple |
 | Running indicator | green | green |
+
+## Preview
+
+`ocs` shows a bordered preview pane by default. The pane displays the first user message for the selected session.
+
+- Press `tab` to toggle it on or off
+- On wider terminals it appears to the right of the session list
+- On narrower terminals it moves below the session list
+- The pane header shows `Preview` on the left and `<Tab> Toggle` on the right
 
 ## Requirements
 

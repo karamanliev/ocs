@@ -2,13 +2,13 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -118,36 +118,40 @@ func getRunningSessionIDs() map[string]struct{} {
 	return result
 }
 
-func getFirstMessage(dbPath, sessionID string) string {
+type previewData struct {
+	user      string
+	assistant string
+}
+
+func getFirstMessageByRole(dbPath, sessionID, role string) string {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return ""
 	}
 	defer db.Close()
 
-	var partData string
+	var text string
 	// modernc.org/sqlite includes JSON1 extension
 	err = db.QueryRow(`
-		SELECT p.data FROM part p
+		SELECT json_extract(p.data, '$.text') FROM part p
 		JOIN message m ON m.id = p.message_id
-		WHERE m.session_id = ? AND json_extract(m.data, '$.role') = 'user'
+		WHERE m.session_id = ?
+		  AND json_extract(m.data, '$.role') = ?
+		  AND json_extract(p.data, '$.type') = 'text'
 		ORDER BY m.time_created ASC, p.time_created ASC
 		LIMIT 1
-	`, sessionID).Scan(&partData)
+	`, sessionID, role).Scan(&text)
 	if err != nil {
 		return ""
 	}
-	var part struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+	return text
+}
+
+func getPreviewData(dbPath, sessionID string) previewData {
+	return previewData{
+		user:      getFirstMessageByRole(dbPath, sessionID, "user"),
+		assistant: getFirstMessageByRole(dbPath, sessionID, "assistant"),
 	}
-	if err := json.Unmarshal([]byte(partData), &part); err != nil {
-		return ""
-	}
-	if part.Type == "text" {
-		return part.Text
-	}
-	return ""
 }
 
 // ─── Theme ──────────────────────────────────────────────────────────────────
@@ -469,7 +473,7 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		dirStr = padRight(highlightSubstringStyled(dirText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
 	} else {
 		titleStr = lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
-		dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(true).Render(dirText)
+		dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(dirText)
 	}
 
 	var parts []string
@@ -502,7 +506,7 @@ type model struct {
 	delegate    *sessionDelegate
 	sessions    []Session
 	running     map[string]struct{}
-	firstMsgs   map[string]string
+	firstMsgs   map[string]previewData
 	selected    map[string]struct{}
 	deleteMode  bool
 	confirming  bool
@@ -522,9 +526,18 @@ type model struct {
 	renameInput textinput.Model
 }
 
+type layoutMetrics struct {
+	showPreview bool
+	previewSide bool
+	listWidth   int
+	listHeight  int
+	previewW    int
+	previewH    int
+}
+
 type previewMsg struct {
-	id      string
-	content string
+	id   string
+	data previewData
 }
 
 type checkThemeMsg struct {
@@ -534,7 +547,7 @@ type checkThemeMsg struct {
 
 func fetchPreview(dbPath, sessionID string) tea.Cmd {
 	return func() tea.Msg {
-		return previewMsg{id: sessionID, content: getFirstMessage(dbPath, sessionID)}
+		return previewMsg{id: sessionID, data: getPreviewData(dbPath, sessionID)}
 	}
 }
 
@@ -605,7 +618,7 @@ func parseBackgroundResponse(s string) (bool, error) {
 	return brightness < 128, nil
 }
 
-func newModel(startTmux bool) (*model, error) {
+func newModel(startTmux bool, noPreview bool) (*model, error) {
 	agentPath, err := exec.LookPath("opencode")
 	if err != nil {
 		return nil, fmt.Errorf("opencode not found in PATH")
@@ -671,13 +684,13 @@ func newModel(startTmux bool) (*model, error) {
 		delegate:    delegate,
 		sessions:    sessions,
 		running:     running,
-		firstMsgs:   make(map[string]string),
+		firstMsgs:   make(map[string]previewData),
 		selected:    make(map[string]struct{}),
 		mode:        initialMode,
 		hasTmux:     hasTmux,
 		agentPath:   agentPath,
 		dbPath:      dbPath,
-		showPreview: false,
+		showPreview: !noPreview,
 		theme:       theme,
 		isDark:      isDark,
 		renameInput: ti,
@@ -685,6 +698,11 @@ func newModel(startTmux bool) (*model, error) {
 }
 
 func (m model) Init() tea.Cmd {
+	if m.showPreview {
+		if item := m.list.SelectedItem(); item != nil {
+			return fetchPreview(m.dbPath, item.(sessionItem).session.ID)
+		}
+	}
 	return nil
 }
 
@@ -697,7 +715,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case previewMsg:
-		m.firstMsgs[msg.id] = msg.content
+		m.firstMsgs[msg.id] = msg.data
 		return m, nil
 
 	case tea.FocusMsg:
@@ -783,13 +801,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
-			case "esc":
-				if m.showPreview {
-					m.showPreview = false
-					m.resize()
-					return m, nil
-				}
-				return m, nil
 			case "tab":
 				m.showPreview = !m.showPreview
 				m.resize()
@@ -1005,20 +1016,13 @@ func (m *model) rebuildItems() {
 }
 
 func (m *model) resize() {
-	// Account for left/right borders
-	listWidth := m.width - 2
-	if listWidth < 20 {
-		listWidth = 20
+	layout := m.layoutMetrics()
+	innerListWidth := layout.listWidth - 2
+	if innerListWidth < 20 {
+		innerListWidth = 20
 	}
-
-	// colHeader(1) + topBorder(1) + bottomBorder(1) + footer(1)
-	listHeight := m.height - 4
-	if listHeight < 5 {
-		listHeight = 5
-	}
-
-	m.delegate.updateWidths(listWidth)
-	m.list.SetSize(listWidth, listHeight)
+	m.delegate.updateWidths(innerListWidth)
+	m.list.SetSize(innerListWidth, layout.listHeight)
 }
 
 // ─── View ───────────────────────────────────────────────────────────────────
@@ -1028,18 +1032,22 @@ func (m model) View() string {
 		return "Loading..."
 	}
 
+	layout := m.layoutMetrics()
 	colHeader := m.renderColumnHeader()
 	listView := m.list.View()
-
-	content := colHeader + "\n" + listView
-	bordered := m.renderBox(content)
+	listBox := m.renderBox(colHeader+"\n"+listView, layout.listWidth)
 
 	footer := m.renderFooter()
-	out := bordered + "\n" + footer
-
-	if m.showPreview {
-		out = m.renderOverlay(out, m.renderPreviewBox(), m.theme.previewBg, false)
+	out := listBox
+	if layout.showPreview {
+		previewBox := m.renderPreviewPane(layout.previewW, layout.previewH)
+		if layout.previewSide {
+			out = joinHorizontalPanels(listBox, previewBox, layout.listWidth, layout.previewW)
+		} else {
+			out = listBox + "\n" + previewBox
+		}
 	}
+	out += "\n" + footer
 
 	if m.confirmingDelete() {
 		out = m.renderOverlay(out, m.renderDeleteBox(), m.theme.modalBg, true)
@@ -1050,6 +1058,90 @@ func (m model) View() string {
 	}
 
 	return out
+}
+
+func (m model) layoutMetrics() layoutMetrics {
+	width := m.width
+	if width < 20 {
+		width = 20
+	}
+	height := m.height
+	if height < 8 {
+		height = 8
+	}
+
+	layout := layoutMetrics{
+		showPreview: m.showPreview,
+		listWidth:   width,
+		listHeight:  height - 4,
+	}
+	if layout.listHeight < 5 {
+		layout.listHeight = 5
+	}
+	if !m.showPreview {
+		return layout
+	}
+
+	const gap = 1
+	const minListOuterW = 52
+	const minPreviewOuterW = 36
+	const sideThreshold = 132
+
+	if width >= sideThreshold && width >= height*2 {
+		previewW := width * 38 / 100
+		if previewW < minPreviewOuterW {
+			previewW = minPreviewOuterW
+		}
+		if previewW > width-minListOuterW-gap {
+			previewW = width - minListOuterW - gap
+		}
+		listW := width - previewW - gap
+		if listW >= minListOuterW && previewW >= minPreviewOuterW {
+			layout.previewSide = true
+			layout.listWidth = listW
+			layout.previewW = previewW
+			layout.previewH = height - 1
+			if layout.previewH < 6 {
+				layout.previewH = 6
+			}
+			return layout
+		}
+	}
+
+	previewH := height * 42 / 100
+	minPreviewH := 10
+	maxPreviewHLimit := 18
+	if width < height*2 {
+		previewH = height * 48 / 100
+		minPreviewH = 12
+		maxPreviewHLimit = 22
+	}
+	if previewH < minPreviewH {
+		previewH = minPreviewH
+	}
+	if previewH > maxPreviewHLimit {
+		previewH = maxPreviewHLimit
+	}
+	maxPreviewH := height - 10
+	if maxPreviewH < 4 {
+		maxPreviewH = 4
+	}
+	if previewH > maxPreviewH {
+		previewH = maxPreviewH
+	}
+	listHeight := height - 4 - gap - previewH
+	if listHeight < 5 {
+		listHeight = 5
+		previewH = height - 10
+		if previewH < 4 {
+			previewH = 4
+		}
+	}
+
+	layout.listHeight = listHeight
+	layout.previewW = width
+	layout.previewH = previewH
+	return layout
 }
 
 func (m model) renderColumnHeader() string {
@@ -1153,37 +1245,56 @@ func (m model) renderFooter() string {
 	return " " + left + strings.Repeat(" ", gap) + rightStyled + " "
 }
 
-func (m model) renderBox(content string) string {
-	lines := strings.Split(content, "\n")
-	innerW := m.width - 2
-
+func (m model) renderBox(content string, width int) string {
 	titleColor := m.theme.titleAllFg
 	if m.mode == "tmux" {
 		titleColor = m.theme.titleTmuxFg
 	}
-
-	titlePlain := " OpenCode Sessions "
-	titleStyled := lipgloss.NewStyle().Bold(true).Foreground(titleColor).Render(titlePlain)
-	titleW := lipgloss.Width(titleStyled)
-
-	var tagStyled string
-	var tagW int
+	rightTitle := ""
 	if m.mode == "tmux" {
-		tagPlain := " [tmux] "
-		tagStyled = lipgloss.NewStyle().Bold(true).Foreground(m.theme.titleTmuxFg).Render(tagPlain)
-		tagW = lipgloss.Width(tagStyled)
+		rightTitle = "[tmux]"
+	}
+	return m.renderPanel(content, width, 0, "OpenCode Sessions", rightTitle, titleColor, m.theme.titleTmuxFg, "")
+}
+
+func (m model) renderPanel(content string, width int, height int, leftTitle string, rightTitle string, leftColor lipgloss.Color, rightColor lipgloss.Color, bg lipgloss.Color) string {
+	if width < 4 {
+		width = 4
+	}
+	innerW := width - 2
+	lines := strings.Split(content, "\n")
+	if height > 0 {
+		innerH := height - 2
+		if innerH < 0 {
+			innerH = 0
+		}
+		if len(lines) > innerH {
+			lines = lines[:innerH]
+		}
+		for len(lines) < innerH {
+			lines = append(lines, "")
+		}
+	}
+
+	leftStyled := lipgloss.NewStyle().Bold(true).Foreground(leftColor).Render(" " + leftTitle + " ")
+	leftW := lipgloss.Width(leftStyled)
+	rightStyled := ""
+	rightW := 0
+	if rightTitle != "" {
+		rightStyled = lipgloss.NewStyle().Bold(true).Foreground(rightColor).Render(" " + rightTitle + " ")
+		rightW = lipgloss.Width(rightStyled)
 	}
 
 	border := lipgloss.NewStyle().Foreground(m.theme.border)
 	left := border.Render("┌")
 	right := border.Render("┐")
 
-	midW := innerW - titleW - tagW
+	midW := innerW - leftW - rightW
 	if midW < 0 {
 		midW = 0
 	}
 	mid := border.Render(strings.Repeat("─", midW))
-	top := left + titleStyled + mid + tagStyled + right
+	top := left + leftStyled + mid + rightStyled + right
 
 	var body []string
 	for _, line := range lines {
@@ -1191,12 +1302,65 @@ func (m model) renderBox(content string) string {
 		if vis < innerW {
 			line += strings.Repeat(" ", innerW-vis)
 		}
-		body = append(body, border.Render("│")+line+border.Render("│"))
+		if bg != "" {
+			line = withLineBg(line, bg)
+		}
+		body = append(body, border.Render("│")+line+"\x1b[0m"+border.Render("│"))
 	}
 
 	bottom := border.Render("└") + border.Render(strings.Repeat("─", innerW)) + border.Render("┘")
 
 	return top + "\n" + strings.Join(body, "\n") + "\n" + bottom
+}
+
+func joinHorizontalPanels(left string, right string, leftW int, rightW int) string {
+	leftLines := strings.Split(left, "\n")
+	rightLines := strings.Split(right, "\n")
+	count := len(leftLines)
+	if len(rightLines) > count {
+		count = len(rightLines)
+	}
+	var out []string
+	for i := 0; i < count; i++ {
+		leftLine := strings.Repeat(" ", leftW)
+		if i < len(leftLines) {
+			leftLine = padRight(leftLines[i], leftW)
+		}
+		rightLine := strings.Repeat(" ", rightW)
+		if i < len(rightLines) {
+			rightLine = padRight(rightLines[i], rightW)
+		}
+		out = append(out, leftLine+" "+rightLine)
+	}
+	return strings.Join(out, "\n")
+}
+
+func withLineBg(line string, bg lipgloss.Color) string {
+	hex := string(bg)
+	if !strings.HasPrefix(hex, "#") || len(hex) != 7 {
+		return line
+	}
+	r, _ := strconv.ParseUint(hex[1:3], 16, 8)
+	g, _ := strconv.ParseUint(hex[3:5], 16, 8)
+	b, _ := strconv.ParseUint(hex[5:7], 16, 8)
+	bgSeq := fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b)
+	result := strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+bgSeq)
+	return bgSeq + result
+}
+
+func truncatePreviewLines(lines []string, limit int) []string {
+	if limit < 1 || len(lines) <= limit {
+		return lines
+	}
+	lines = append([]string{}, lines[:limit]...)
+	last := lines[len(lines)-1]
+	if lipgloss.Width(last) > 3 {
+		last = truncate.StringWithTail(last, uint(lipgloss.Width(last)), "...")
+	} else {
+		last = "..."
+	}
+	lines[len(lines)-1] = last
+	return lines
 }
 
 func (m model) renderOverlay(background string, box string, _ lipgloss.Color, dim bool) string {
@@ -1285,65 +1449,90 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 	return card
 }
 
-func (m model) renderPreviewBox() string {
+func (m model) renderPreviewPane(width int, height int) string {
 	item := m.list.SelectedItem()
-	if item == nil {
-		return ""
-	}
-	sess := item.(sessionItem).session
-
-	content, ok := m.firstMsgs[sess.ID]
-	if !ok {
-		content = "Loading..."
-	} else if content == "" {
-		content = "No preview available."
-	}
-
-	boxWidth := m.width - 14
-	if boxWidth > 88 {
-		boxWidth = 88
-	}
-	if boxWidth < 28 {
-		boxWidth = 28
-	}
-
-	innerWidth := boxWidth - 8 // border(2) + padding(4) + content inset(2)
-
-	maxLines := m.height - 14
-	if maxLines < 4 {
-		maxLines = 4
-	}
-
-	wrapped := wrapText(content, innerWidth)
-	lines := strings.Split(wrapped, "\n")
-	if len(lines) > maxLines {
-		lines = lines[:maxLines]
-	}
-
-	for i, l := range lines {
-		w := lipgloss.Width(l)
-		if w < innerWidth {
-			lines[i] = l + strings.Repeat(" ", innerWidth-w)
+	userContent := "No session selected."
+	assistantContent := ""
+	titleText := ""
+	dirText := ""
+	if item != nil {
+		sess := item.(sessionItem).session
+		titleText = sess.Title
+		dirText = sess.Directory
+		if cached, ok := m.firstMsgs[sess.ID]; !ok {
+			userContent = "Loading..."
+		} else {
+			if cached.user == "" {
+				userContent = "No user preview available."
+			} else {
+				userContent = cached.user
+			}
+			assistantContent = cached.assistant
 		}
 	}
 
-	title := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.previewTitleFg).
-		Render(truncate.StringWithTail(sess.Title, uint(innerWidth), "..."))
+	innerW := width - 2
+	if innerW < 10 {
+		innerW = 10
+	}
+	innerH := height - 2
+	if innerH < 2 {
+		innerH = 2
+	}
+	contentW := innerW - 4
+	if contentW < 6 {
+		contentW = 6
+	}
 
-	contentBlock := lipgloss.NewStyle().
-		Foreground(m.theme.previewContentFg).
-		Background(m.theme.previewBg).
-		Border(lipgloss.NormalBorder()).
-		BorderForeground(m.theme.border).
-		Padding(1, 1).
-		Width(innerWidth + 2).
-		Render(strings.Join(lines, "\n"))
+	padLeft := "  "
+	var lines []string
+	lines = append(lines, "")
 
-	body := title + "\n" + lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(sess.Directory) + "\n\n" + contentBlock
+	if titleText != "" {
+		lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(truncate.StringWithTail(titleText, uint(contentW), "...")))
+	}
+	if dirText != "" {
+		lines = append(lines, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(truncate.StringWithTail(dirText, uint(contentW), "...")))
+		lines = append(lines, "")
+	}
 
-	return m.renderModalBox(boxWidth, m.theme.previewBorder, "Preview", m.theme.previewBorder, body, "tab close, esc back")
+	maxContentLines := innerH - len(lines) - 2
+	if maxContentLines < 1 {
+		maxContentLines = 1
+		if innerH > 1 && len(lines) >= innerH {
+			lines = lines[:innerH-1]
+		}
+	}
+
+	lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render("You"))
+	userLines := truncatePreviewLines(strings.Split(wrapText(userContent, contentW), "\n"), 4)
+	for _, line := range userLines {
+		lines = append(lines, padLeft+lipgloss.NewStyle().Italic(true).Foreground(m.theme.previewContentFg).Render(line))
+	}
+
+	if assistantContent != "" && len(lines) < innerH-1 {
+		lines = append(lines, "")
+		lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalHintFg).Render("Agent"))
+		assistantLines := truncatePreviewLines(strings.Split(wrapText(assistantContent, contentW), "\n"), 5)
+		free := innerH - len(lines)
+		if free > 0 && len(assistantLines) > free {
+			assistantLines = truncatePreviewLines(assistantLines, free)
+		}
+		for _, line := range assistantLines {
+			lines = append(lines, padLeft+lipgloss.NewStyle().Italic(true).Foreground(m.theme.modalHintFg).Render(line))
+		}
+	}
+
+	for len(lines) < innerH {
+		lines = append(lines, "")
+	}
+	if len(lines) > innerH {
+		lines = lines[:innerH]
+	}
+
+	contentView := strings.Join(lines, "\n")
+
+	return m.renderPanel(contentView, width, height, "Preview", "<Tab> Toggle", m.theme.previewBorder, m.theme.modalHintFg, m.theme.previewBg)
 }
 
 func (m model) renderDeleteBox() string {
@@ -1559,10 +1748,12 @@ func ctrlTmux(agentPath, id, dir string) {
 
 func main() {
 	var startTmux bool
+	var noPreview bool
 	flag.BoolVar(&startTmux, "tmux", false, "start in tmux mode")
+	flag.BoolVar(&noPreview, "no-preview", false, "start with preview pane hidden")
 	flag.Parse()
 
-	m, err := newModel(startTmux)
+	m, err := newModel(startTmux, noPreview)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
 		os.Exit(1)
