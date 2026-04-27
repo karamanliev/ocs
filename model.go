@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,6 +38,19 @@ type model struct {
 	renameInput textinput.Model
 	lastClickAt time.Time
 	lastClickIx int
+	deleting    bool
+	spinner     spinner.Model
+}
+
+type deleteDoneMsg struct{}
+
+func doDeleteCmd(agentPath string, ids []string) tea.Cmd {
+	return func() tea.Msg {
+		for _, id := range ids {
+			deleteSession(agentPath, id)
+		}
+		return deleteDoneMsg{}
+	}
 }
 
 type previewMsg struct {
@@ -144,6 +158,10 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 	ti.TextStyle = lipgloss.NewStyle().Foreground(theme.modalPromptFg)
 	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(theme.textMuted)
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(theme.filterPrompt)
+
 	return &model{
 		list:        l,
 		delegate:    delegate,
@@ -160,6 +178,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 		isDark:      isDark,
 		renameInput: ti,
 		lastClickIx: -1,
+		spinner:     s,
 	}, nil
 }
 
@@ -180,6 +199,7 @@ func (m *model) applyTheme() {
 	m.renameInput.Cursor.Style = lipgloss.NewStyle().Foreground(t.filterPrompt)
 	m.renameInput.TextStyle = lipgloss.NewStyle().Foreground(t.modalPromptFg)
 	m.renameInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(t.textMuted)
+	m.spinner.Style = lipgloss.NewStyle().Foreground(t.filterPrompt)
 }
 
 func (m model) confirmingDelete() bool {
@@ -239,39 +259,6 @@ func (m *model) cancelRename() {
 	m.renameID = ""
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
-}
-
-func (m model) executeDelete() (tea.Model, tea.Cmd) {
-	m.confirming = false
-	m.deleteMode = false
-
-	var ids []string
-	for id := range m.selected {
-		ids = append(ids, id)
-	}
-	if len(ids) == 0 {
-		if item := m.list.SelectedItem(); item != nil {
-			ids = append(ids, item.(sessionItem).session.ID)
-		}
-	}
-
-	for _, id := range ids {
-		deleteSession(m.agentPath, id)
-	}
-
-	m.selected = make(map[string]struct{})
-
-	sessions, err := getSessions(m.dbPath)
-	if err != nil {
-		m.sessions = nil
-		m.list.SetItems(nil)
-		return m, nil
-	}
-	m.sessions = sessions
-	m.states = getSessionStates(sessions)
-	cmd := m.rebuildItems()
-
-	return m, cmd
 }
 
 func (m *model) afterMove() (tea.Model, tea.Cmd) {

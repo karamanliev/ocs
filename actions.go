@@ -12,8 +12,6 @@ import (
 
 func deleteSession(cmd, id string) {
 	c := exec.Command(cmd, "session", "delete", id)
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
 	_ = c.Run()
 }
 

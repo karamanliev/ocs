@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -17,6 +18,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case previewMsg:
 		m.firstMsgs[msg.id] = msg.data
+		return m, nil
+
+	case deleteDoneMsg:
+		m.deleting = false
+		m.confirming = false
+		m.deleteMode = false
+		m.selected = make(map[string]struct{})
+		sessions, err := getSessions(m.dbPath)
+		if err != nil {
+			m.sessions = nil
+			m.list.SetItems(nil)
+			return m, nil
+		}
+		m.sessions = sessions
+		m.states = getSessionStates(sessions)
+		cmd := m.rebuildItems()
+		return m, cmd
+
+	case spinner.TickMsg:
+		if m.deleting {
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			return m, cmd
+		}
 		return m, nil
 
 	case tea.FocusMsg:
@@ -58,10 +83,24 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.deleting {
+		return m, nil
+	}
+
 	if m.confirmingDelete() {
 		switch msg.String() {
 		case "y", "Y":
-			return m.executeDelete()
+			m.deleting = true
+			var ids []string
+			for id := range m.selected {
+				ids = append(ids, id)
+			}
+			if len(ids) == 0 {
+				if item := m.list.SelectedItem(); item != nil {
+					ids = append(ids, item.(sessionItem).session.ID)
+				}
+			}
+			return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
 		case "n", "N", "esc", "q":
 			m.confirming = false
 			return m, nil
@@ -166,7 +205,7 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.renameID != "" || m.confirmingDelete() {
+	if m.renameID != "" || m.confirmingDelete() || m.deleting {
 		return m, nil
 	}
 

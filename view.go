@@ -40,7 +40,9 @@ func (m model) View() string {
 	}
 	out += "\n" + footer
 
-	if m.confirmingDelete() {
+	if m.deleting {
+		out = m.renderOverlay(out, m.renderDeletingBox(), m.theme.modalBg, true)
+	} else if m.confirmingDelete() {
 		out = m.renderOverlay(out, m.renderDeleteBox(), m.theme.modalBg, true)
 	}
 
@@ -559,6 +561,22 @@ func (m model) renderDeleteBox() string {
 
 	hint := "y confirm, n cancel"
 	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, hint)
+}
+
+func (m model) renderDeletingBox() string {
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	spin := m.spinner.View()
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Deleting..."))
+	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+
+	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, "")
 }
 
 func (m model) renderRenameBox() string {
