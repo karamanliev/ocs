@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/reflow/truncate"
 	"github.com/muesli/termenv"
 	_ "modernc.org/sqlite"
@@ -157,7 +158,8 @@ type theme struct {
 	timeOld          lipgloss.Color
 	indicator        lipgloss.Color
 	dim              lipgloss.Color
-	cursorBg         lipgloss.Color
+	cursorBgAll      lipgloss.Color
+	cursorBgTmux     lipgloss.Color
 	border           lipgloss.Color
 	colHeaderFg      lipgloss.Color
 	modalBorder      lipgloss.Color
@@ -172,7 +174,8 @@ type theme struct {
 	accent           lipgloss.Color
 	textMain         lipgloss.Color
 	textMuted        lipgloss.Color
-	footerKey        lipgloss.Color
+	footerKeyAll     lipgloss.Color
+	footerKeyTmux    lipgloss.Color
 	footerLabel      lipgloss.Color
 	titleAllFg       lipgloss.Color
 	titleTmuxFg      lipgloss.Color
@@ -185,7 +188,8 @@ var darkTheme = theme{
 	timeOld:          lipgloss.Color("#B983FF"),
 	indicator:        lipgloss.Color("#69F0AE"),
 	dim:              lipgloss.Color("#6B7280"),
-	cursorBg:         lipgloss.Color("#3D3D5C"),
+	cursorBgAll:      lipgloss.Color("#2A3A4A"),
+	cursorBgTmux:     lipgloss.Color("#3A2A4A"),
 	border:           lipgloss.Color("#4B5563"),
 	colHeaderFg:      lipgloss.Color("#9CA3AF"),
 	modalBorder:      lipgloss.Color("#FF6B6B"),
@@ -200,10 +204,11 @@ var darkTheme = theme{
 	accent:           lipgloss.Color("#60A5FA"),
 	textMain:         lipgloss.Color("#E5E7EB"),
 	textMuted:        lipgloss.Color("#4B5563"),
-	footerKey:        lipgloss.Color("#4B5563"),
+	footerKeyAll:     lipgloss.Color("#6B8DB5"),
+	footerKeyTmux:    lipgloss.Color("#8B7DB0"),
 	footerLabel:      lipgloss.Color("#6B7280"),
-	titleAllFg:       lipgloss.Color("#B983FF"),
-	titleTmuxFg:      lipgloss.Color("#60A5FA"),
+	titleAllFg:       lipgloss.Color("#6B8DB5"),
+	titleTmuxFg:      lipgloss.Color("#8B7DB0"),
 }
 
 var lightTheme = theme{
@@ -213,7 +218,8 @@ var lightTheme = theme{
 	timeOld:          lipgloss.Color("#7C3AED"),
 	indicator:        lipgloss.Color("#16A34A"),
 	dim:              lipgloss.Color("#9CA3AF"),
-	cursorBg:         lipgloss.Color("#DBEAFE"),
+	cursorBgAll:      lipgloss.Color("#D0E0F0"),
+	cursorBgTmux:     lipgloss.Color("#E0D0F0"),
 	border:           lipgloss.Color("#D1D5DB"),
 	colHeaderFg:      lipgloss.Color("#6B7280"),
 	modalBorder:      lipgloss.Color("#DC2626"),
@@ -228,10 +234,11 @@ var lightTheme = theme{
 	accent:           lipgloss.Color("#2563EB"),
 	textMain:         lipgloss.Color("#1F2937"),
 	textMuted:        lipgloss.Color("#D1D5DB"),
-	footerKey:        lipgloss.Color("#6B7280"),
+	footerKeyAll:     lipgloss.Color("#5B7D9F"),
+	footerKeyTmux:    lipgloss.Color("#7B6D9F"),
 	footerLabel:      lipgloss.Color("#9CA3AF"),
-	titleAllFg:       lipgloss.Color("#7C3AED"),
-	titleTmuxFg:      lipgloss.Color("#2563EB"),
+	titleAllFg:       lipgloss.Color("#5B7D9F"),
+	titleTmuxFg:      lipgloss.Color("#7B6D9F"),
 }
 
 func detectDarkMode() bool {
@@ -281,6 +288,7 @@ func (i sessionItem) FilterValue() string {
 type sessionDelegate struct {
 	width, timeW, checkboxW, indicatorW, titleW, dirW int
 	showCheckbox                                      bool
+	mode                                              string
 	theme                                             theme
 }
 
@@ -289,6 +297,7 @@ func newSessionDelegate(t theme) *sessionDelegate {
 		timeW:      10,
 		checkboxW:  3,
 		indicatorW: 1,
+		mode:       "all",
 		theme:      t,
 	}
 }
@@ -377,7 +386,11 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		if vis < d.width {
 			line += strings.Repeat(" ", d.width-vis)
 		}
-		line = lipgloss.NewStyle().Background(d.theme.cursorBg).Bold(true).Render(line)
+		cursorBg := d.theme.cursorBgAll
+		if d.mode == "tmux" {
+			cursorBg = d.theme.cursorBgTmux
+		}
+		line = lipgloss.NewStyle().Background(cursorBg).Bold(true).Render(line)
 		fmt.Fprint(w, line)
 		return
 	}
@@ -386,7 +399,7 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
 	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(d.theme.indicator).Render(indicatorText)
 	titleStr := lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
-	dirStr := lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Render(dirText)
+	dirStr := lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(true).Render(dirText)
 
 	var parts []string
 	parts = append(parts, prefix)
@@ -626,6 +639,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.theme = lightTheme
 			}
 			m.delegate.theme = m.theme
+			m.delegate.mode = m.mode
 			m.list.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(m.theme.filterPrompt)
 			m.list.FilterInput.Cursor.Style = lipgloss.NewStyle().Foreground(m.theme.filterPrompt)
 			m.list.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(m.theme.filterPrompt)
@@ -723,6 +737,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						m.mode = "all"
 					}
+					m.delegate.mode = m.mode
 					m.rebuildItems()
 				}
 				return m, nil
@@ -947,15 +962,15 @@ func (m model) View() string {
 	out := bordered + "\n" + footer
 
 	if m.showPreview {
-		out = composeOverlay(out, m.renderPreviewPopup())
+		out = m.renderOverlay(out, m.renderPreviewBox(), m.theme.previewBg, false)
 	}
 
 	if m.confirmingDelete() {
-		out = m.renderDeleteOverlay(out)
+		out = m.renderOverlay(out, m.renderDeleteBox(), m.theme.modalBg, true)
 	}
 
 	if m.renameID != "" {
-		out = m.renderRenameOverlay(out)
+		out = m.renderOverlay(out, m.renderRenameBox(), m.theme.modalBg, true)
 	}
 
 	return out
@@ -997,7 +1012,11 @@ func (m model) renderFooter() string {
 	}
 	usable := w - 2 // 1 left pad + 1 right pad
 
-	keyStyle := lipgloss.NewStyle().Foreground(m.theme.footerKey)
+	footerKey := m.theme.footerKeyAll
+	if m.mode == "tmux" {
+		footerKey = m.theme.footerKeyTmux
+	}
+	keyStyle := lipgloss.NewStyle().Foreground(footerKey)
 	labelStyle := lipgloss.NewStyle().Foreground(m.theme.footerLabel)
 	sepStyle := lipgloss.NewStyle().Foreground(m.theme.footerLabel)
 
@@ -1104,18 +1123,93 @@ func (m model) renderBox(content string) string {
 	return top + "\n" + strings.Join(body, "\n") + "\n" + bottom
 }
 
-func composeOverlay(background, foreground string) string {
-	bgLines := strings.Split(background, "\n")
-	fgLines := strings.Split(foreground, "\n")
-	for i := 0; i < len(fgLines) && i < len(bgLines); i++ {
-		if strings.TrimSpace(fgLines[i]) != "" {
-			bgLines[i] = fgLines[i]
+func (m model) renderOverlay(background string, box string, _ lipgloss.Color, dim bool) string {
+	boxLines := strings.Split(box, "\n")
+	boxH := len(boxLines)
+	topPad := (m.height - boxH) / 2
+	if topPad < 0 {
+		topPad = 0
+	}
+
+	boxWidth := 0
+	for _, l := range boxLines {
+		if w := lipgloss.Width(l); w > boxWidth {
+			boxWidth = w
 		}
 	}
-	return strings.Join(bgLines, "\n")
+
+	leftPad := (m.width - boxWidth) / 2
+	if leftPad < 0 {
+		leftPad = 0
+	}
+	rightPad := m.width - boxWidth - leftPad
+	if rightPad < 0 {
+		rightPad = 0
+	}
+
+	bgLines := strings.Split(background, "\n")
+	dimStyle := lipgloss.NewStyle().Foreground(m.theme.dim)
+
+	var result []string
+	for y := 0; y < m.height; y++ {
+		line := ""
+		if y < len(bgLines) {
+			line = padRight(bgLines[y], m.width)
+		} else {
+			line = strings.Repeat(" ", m.width)
+		}
+		if dim {
+			line = dimStyle.Render(line)
+		}
+
+		inBox := y >= topPad && y < topPad+boxH
+		if inBox {
+			boxIdx := y - topPad
+			if boxIdx < len(boxLines) {
+				prefix := ansi.Cut(line, 0, leftPad)
+				suffix := ansi.Cut(line, leftPad+boxWidth, m.width)
+				result = append(result, prefix+boxLines[boxIdx]+suffix)
+				continue
+			}
+		}
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
 
-func (m model) renderPreviewPopup() string {
+func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge string, badgeColor lipgloss.Color, body string, hint string) string {
+	badgeView := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalBg).
+		Background(badgeColor).
+		Padding(0, 1).
+		Render(strings.ToUpper(badge))
+
+	bodyView := lipgloss.NewStyle().
+		Foreground(m.theme.textMain).
+		Width(width).
+		Render(body)
+
+	hintView := lipgloss.NewStyle().
+		Foreground(m.theme.modalHintFg).
+		Width(width).
+		Render(hint)
+
+	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
+
+	card := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderColor).
+		Background(m.theme.modalBg).
+		Padding(1, 2).
+		Width(width).
+		Render(content)
+
+	return card
+}
+
+func (m model) renderPreviewBox() string {
 	item := m.list.SelectedItem()
 	if item == nil {
 		return ""
@@ -1129,19 +1223,19 @@ func (m model) renderPreviewPopup() string {
 		content = "No preview available."
 	}
 
-	boxWidth := m.width - 8
-	if boxWidth > 80 {
-		boxWidth = 80
+	boxWidth := m.width - 14
+	if boxWidth > 88 {
+		boxWidth = 88
 	}
-	if boxWidth < 20 {
-		boxWidth = 20
+	if boxWidth < 28 {
+		boxWidth = 28
 	}
 
-	innerWidth := boxWidth - 6 // border(2) + padding(4)
+	innerWidth := boxWidth - 8 // border(2) + padding(4) + content inset(2)
 
-	maxLines := m.height - 6
-	if maxLines < 3 {
-		maxLines = 3
+	maxLines := m.height - 14
+	if maxLines < 4 {
+		maxLines = 4
 	}
 
 	wrapped := wrapText(content, innerWidth)
@@ -1157,25 +1251,26 @@ func (m model) renderPreviewPopup() string {
 		}
 	}
 
-	contentBlock := strings.Join(lines, "\n")
+	title := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.previewTitleFg).
+		Render(truncate.StringWithTail(sess.Title, uint(innerWidth), "..."))
 
-	title := lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render("Preview")
-	hint := lipgloss.NewStyle().Foreground(m.theme.dim).Render("tab or esc to close")
-
-	boxContent := title + "\n\n" + contentBlock + "\n\n" + hint
-
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(m.theme.previewBorder).
+	contentBlock := lipgloss.NewStyle().
+		Foreground(m.theme.previewContentFg).
 		Background(m.theme.previewBg).
-		Padding(1, 2).
-		Width(boxWidth).
-		Render(boxContent)
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(m.theme.border).
+		Padding(1, 1).
+		Width(innerWidth + 2).
+		Render(strings.Join(lines, "\n"))
 
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+	body := title + "\n" + lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(sess.Directory) + "\n\n" + contentBlock
+
+	return m.renderModalBox(boxWidth, m.theme.previewBorder, "Preview", m.theme.previewBorder, body, "tab close, esc back")
 }
 
-func (m model) renderDeleteOverlay(background string) string {
+func (m model) renderDeleteBox() string {
 	var prompt string
 	if len(m.selected) > 0 {
 		prompt = fmt.Sprintf("Delete %d sessions?", len(m.selected))
@@ -1187,82 +1282,64 @@ func (m model) renderDeleteOverlay(background string) string {
 		}
 	}
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(m.theme.modalBorder).
-		Background(m.theme.modalBg).
-		Padding(1, 3).
-		Width(50).
-		Align(lipgloss.Center).
-		Render(
-			lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render(prompt) + "\n\n" +
-				lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render("Press y to confirm  •  n to cancel"),
-		)
-
-	overlay := lipgloss.Place(m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		box,
-	)
-
-	bgLines := strings.Split(background, "\n")
-	dimStyle := lipgloss.NewStyle().Foreground(m.theme.textMuted)
-	for i, l := range bgLines {
-		bgLines[i] = dimStyle.Render(l)
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
 	}
 
-	return composeOverlay(strings.Join(bgLines, "\n"), overlay)
+	body := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalPromptFg).
+		Width(width).
+		Align(lipgloss.Left).
+		Render(wrapText(prompt, width))
+
+	hint := "y confirm, n cancel"
+	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, hint)
 }
 
-func (m model) renderRenameOverlay(background string) string {
+func (m model) renderRenameBox() string {
 	item := m.list.SelectedItem()
 	var title string
 	if item != nil {
 		title = item.(sessionItem).session.Title
 	}
 
-	boxWidth := 52
-	innerWidth := boxWidth - 6 // border(2) + padding(4)
+	boxWidth := 54
+	if m.width < 70 {
+		boxWidth = m.width - 14
+	}
+	if boxWidth < 34 {
+		boxWidth = 34
+	}
+	innerWidth := boxWidth - 8
 
-	label := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Rename session")
 	sub := ""
 	if title != "" {
-		sub = lipgloss.NewStyle().Foreground(m.theme.textMuted).Render(truncate.StringWithTail(title, uint(innerWidth), "…"))
+		sub = lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(truncate.StringWithTail(title, uint(innerWidth), "..."))
 	}
 
-	inputView := m.renameInput.View()
-	inputW := lipgloss.Width(inputView)
-	if inputW < innerWidth {
-		inputView += strings.Repeat(" ", innerWidth-inputW)
-	}
+	input := m.renameInput
+	input.Width = innerWidth - 4
+	inputView := input.View()
+	field := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(m.theme.border).
+		Background(m.theme.previewBg).
+		Padding(0, 1).
+		Width(innerWidth).
+		Render(inputView)
 
-	hint := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render("enter to confirm  •  esc to cancel")
-
-	boxContent := label + "\n"
+	body := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Set new session title")
 	if sub != "" {
-		boxContent += sub + "\n"
+		body += "\n" + sub
 	}
-	boxContent += "\n" + inputView + "\n\n" + hint
+	body += "\n\n" + field
 
-	box := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(m.theme.modalBorder).
-		Background(m.theme.modalBg).
-		Padding(1, 3).
-		Width(boxWidth).
-		Render(boxContent)
-
-	overlay := lipgloss.Place(m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		box,
-	)
-
-	bgLines := strings.Split(background, "\n")
-	dimStyle := lipgloss.NewStyle().Foreground(m.theme.textMuted)
-	for i, l := range bgLines {
-		bgLines[i] = dimStyle.Render(l)
-	}
-
-	return composeOverlay(strings.Join(bgLines, "\n"), overlay)
+	return m.renderModalBox(boxWidth, m.theme.accent, "Rename", m.theme.accent, body, "enter save, esc cancel")
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
