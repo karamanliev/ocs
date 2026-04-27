@@ -524,6 +524,8 @@ type model struct {
 	isDark      bool
 	renameID    string
 	renameInput textinput.Model
+	lastClickAt time.Time
+	lastClickIx int
 }
 
 type layoutMetrics struct {
@@ -694,6 +696,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 		theme:       theme,
 		isDark:      isDark,
 		renameInput: ti,
+		lastClickIx: -1,
 	}, nil
 }
 
@@ -744,6 +747,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.renameInput.PlaceholderStyle = lipgloss.NewStyle().Foreground(m.theme.textMuted)
 		}
 		return m, nil
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
 		if m.renameID != "" {
@@ -979,6 +985,79 @@ func (m *model) afterMove() (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.renameID != "" || m.confirmingDelete() {
+		return m, nil
+	}
+
+	if !m.inListBody(msg.X, msg.Y) {
+		return m, nil
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		m.list.CursorUp()
+		return m.afterMove()
+	case tea.MouseButtonWheelDown:
+		m.list.CursorDown()
+		return m.afterMove()
+	}
+
+	if msg.Action != tea.MouseActionPress || msg.Button != tea.MouseButtonLeft {
+		return m, nil
+	}
+
+	ix, ok := m.listIndexAt(msg.X, msg.Y)
+	if !ok {
+		return m, nil
+	}
+
+	oldIx := m.list.Index()
+	m.list.Select(ix)
+
+	now := time.Now()
+	doubleClick := m.lastClickIx == ix && !m.lastClickAt.IsZero() && now.Sub(m.lastClickAt) <= 400*time.Millisecond
+	m.lastClickIx = ix
+	m.lastClickAt = now
+
+	if doubleClick && !m.deleteMode {
+		m.lastClickIx = -1
+		m.lastClickAt = time.Time{}
+		return m.setAction(m.mode == "tmux" && m.hasTmux)
+	}
+
+	if ix != oldIx {
+		return m.afterMove()
+	}
+
+	return m, nil
+}
+
+func (m model) inListBody(x int, y int) bool {
+	layout := m.layoutMetrics()
+	if x < 1 || x >= layout.listWidth-1 {
+		return false
+	}
+	if y < 2 || y >= 2+m.list.Height() {
+		return false
+	}
+	return true
+}
+
+func (m model) listIndexAt(x int, y int) (int, bool) {
+	if !m.inListBody(x, y) {
+		return 0, false
+	}
+	row := y - 2
+	visible := m.list.VisibleItems()
+	start, end := m.list.Paginator.GetSliceBounds(len(visible))
+	ix := start + row
+	if ix < start || ix >= end {
+		return 0, false
+	}
+	return ix, true
 }
 
 func (m *model) rebuildItems() {
@@ -1759,7 +1838,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus(), tea.WithMouseCellMotion())
 	finalModel, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
