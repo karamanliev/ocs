@@ -4,6 +4,8 @@ A fast terminal UI for managing [OpenCode](https://opencode.ai) sessions.
 
 `ocs` reads your local OpenCode SQLite database directly and gives you a keyboard-driven interface to resume, attach, rename, preview, and delete sessions. No fzf, no subprocess hacks, just a single static binary.
 
+https://github.com/user-attachments/assets/029e4199-8e3e-4dda-bee4-a6f7ad915ad8
+
 ## Features
 
 - **Dual mode** — `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
