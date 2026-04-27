@@ -838,8 +838,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.startRename()
 				return m, nil
 			case "alt+enter", "ctrl+o":
-				if m.mode == "all" && m.hasTmux {
-					return m.setAction(true)
+				if m.hasTmux {
+					if m.mode == "all" {
+						return m.setAction(true)
+					}
+					return m.setAction(false)
 				}
 				return m, nil
 			case "enter":
@@ -1287,9 +1290,19 @@ func (m model) renderFooter() string {
 	} else {
 		var parts []string
 		parts = append(parts, build("/", " filter"))
-		parts = append(parts, sepStyle.Render(" · ")+build("<CR>", " resume"))
-		if m.mode == "all" && m.hasTmux {
-			parts = append(parts, sepStyle.Render(" · ")+build("<M-CR>", " resume tmux"))
+		crLabel := " resume"
+		mcrLabel := ""
+		if m.mode == "tmux" {
+			crLabel = " resume tmux"
+			if m.hasTmux {
+				mcrLabel = " resume"
+			}
+		} else if m.hasTmux {
+			mcrLabel = " resume tmux"
+		}
+		parts = append(parts, sepStyle.Render(" · ")+build("<CR>", crLabel))
+		if mcrLabel != "" {
+			parts = append(parts, sepStyle.Render(" · ")+build("<M-CR>", mcrLabel))
 		}
 		if m.hasTmux {
 			toggleLabel := " toggle tmux"
