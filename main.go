@@ -42,7 +42,7 @@ func main() {
 		if fm.actionTmux {
 			ctrlTmux(fm.agentPath, fm.actionID, fm.actionDir)
 		} else {
-			resumeSession(fm.agentPath, fm.actionID)
+			resumeSession(fm.agentPath, fm.actionID, fm.actionDir)
 		}
 	}
 }

@@ -50,8 +50,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cancelRename()
 			return m, nil
 		case "enter":
-			m.finishRename()
-			return m, nil
+			cmd := m.finishRename()
+			return m, cmd
 		}
 		var cmd tea.Cmd
 		m.renameInput, cmd = m.renameInput.Update(msg)
@@ -76,8 +76,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.deleteMode = false
 			m.selected = make(map[string]struct{})
-			m.rebuildItems()
-			return m, nil
+			cmd := m.rebuildItems()
+			return m, cmd
 		case " ":
 			if item := m.list.SelectedItem(); item != nil {
 				id := item.(sessionItem).session.ID
@@ -86,7 +86,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				} else {
 					m.selected[id] = struct{}{}
 				}
-				m.rebuildItems()
+				cmd := m.rebuildItems()
+				return m, cmd
 			}
 			return m, nil
 		case "enter", "ctrl+d":
@@ -105,14 +106,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, needsPreview(m)
 		case "ctrl+d":
 			m.deleteMode = true
-			m.rebuildItems()
-			return m, nil
+			cmd := m.rebuildItems()
+			return m, cmd
 		case "ctrl+t":
 			if m.hasTmux {
 				m.mode = toggleMode(m)
 				m.delegate.mode = m.mode
-				m.rebuildItems()
-				return m, needsPreview(m)
+				cmd := m.rebuildItems()
+				return m, tea.Batch(cmd, needsPreview(m))
 			}
 			return m, nil
 		case "ctrl+r":
@@ -237,7 +238,7 @@ func (m model) listIndexAt(x int, y int) (int, bool) {
 	return ix, true
 }
 
-func (m *model) rebuildItems() {
+func (m *model) rebuildItems() tea.Cmd {
 	m.delegate.showCheckbox = m.deleteMode
 	m.resize()
 
@@ -266,7 +267,7 @@ func (m *model) rebuildItems() {
 			showCheckbox: m.deleteMode,
 		})
 	}
-	m.list.SetItems(items)
+	return m.list.SetItems(items)
 }
 
 func (m *model) resize() {

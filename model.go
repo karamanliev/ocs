@@ -209,28 +209,30 @@ func (m *model) startRename() {
 	m.renameInput.Focus()
 }
 
-func (m *model) finishRename() {
+func (m *model) finishRename() tea.Cmd {
 	if m.renameID == "" {
-		return
+		return nil
 	}
 	newTitle := strings.TrimSpace(m.renameInput.Value())
+	var cmd tea.Cmd
 	if newTitle != "" {
 		if err := renameSession(m.dbPath, m.renameID, newTitle); err != nil {
 			m.renameID = ""
 			m.renameInput.Blur()
 			m.renameInput.SetValue("")
-			return
+			return nil
 		}
 		sessions, err := getSessions(m.dbPath)
 		if err == nil {
 			m.sessions = sessions
 			m.states = getSessionStates(m.sessions)
-			m.rebuildItems()
+			cmd = m.rebuildItems()
 		}
 	}
 	m.renameID = ""
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
+	return cmd
 }
 
 func (m *model) cancelRename() {
@@ -267,9 +269,9 @@ func (m model) executeDelete() (tea.Model, tea.Cmd) {
 	}
 	m.sessions = sessions
 	m.states = getSessionStates(sessions)
-	m.rebuildItems()
+	cmd := m.rebuildItems()
 
-	return m, nil
+	return m, cmd
 }
 
 func (m *model) afterMove() (tea.Model, tea.Cmd) {

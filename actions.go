@@ -17,8 +17,11 @@ func deleteSession(cmd, id string) {
 	_ = c.Run()
 }
 
-func resumeSession(cmd, id string) {
+func resumeSession(cmd, id, dir string) {
 	c := exec.Command(cmd, "-s", id)
+	if dir != "" {
+		c.Dir = dir
+	}
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
