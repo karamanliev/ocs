@@ -51,15 +51,6 @@ ocs -no-preview  # launch with preview pane hidden
 
 `ocs` detects your terminal background (light or dark) on startup and live-reloads when the window regains focus. No manual toggle needed.
 
-The UI adapts its palette to the current mode:
-
-| Element | ALL | TMUX |
-|---|---|---|
-| Border title | steel blue | dusty purple |
-| Cursor highlight | blue-tinted | purple-tinted |
-| Footer keys | steel blue | dusty purple |
-| Running indicator | green | green |
-
 ## Preview
 
 `ocs` shows a bordered preview pane by default. The pane displays the first user message for the selected session.
