@@ -832,6 +832,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					m.delegate.mode = m.mode
 					m.rebuildItems()
+					if m.showPreview {
+						if item := m.list.SelectedItem(); item != nil {
+							id := item.(sessionItem).session.ID
+							if _, ok := m.firstMsgs[id]; !ok {
+								return m, fetchPreview(m.dbPath, id)
+							}
+						}
+					}
 				}
 				return m, nil
 			case "ctrl+r":
