@@ -222,12 +222,27 @@ func (m model) renderFooter() string {
 
 	var rightStyled string
 	if m.hasTmux {
-		count := len(m.running)
-		if count > 0 {
-			dot := lipgloss.NewStyle().Foreground(m.theme.indicator).Render("●")
-			rightStyled = dot + labelStyle.Render(fmt.Sprintf(" %d attached", count))
-		} else {
-			rightStyled = labelStyle.Render("○")
+		var runCount, activeCount int
+		for _, st := range m.states {
+			switch st {
+			case stateRunning:
+				runCount++
+			case stateActive:
+				activeCount++
+			}
+		}
+		total := runCount + activeCount
+		if total > 0 {
+			var parts []string
+			if runCount > 0 {
+				dot := lipgloss.NewStyle().Foreground(m.theme.indicatorRunning).Render("●")
+				parts = append(parts, dot+labelStyle.Render(fmt.Sprintf(" %d running", runCount)))
+			}
+			if activeCount > 0 {
+				dot := lipgloss.NewStyle().Foreground(m.theme.indicatorActive).Render("○")
+				parts = append(parts, dot+labelStyle.Render(fmt.Sprintf(" %d active", activeCount)))
+			}
+			rightStyled = strings.Join(parts, "  ")
 		}
 	}
 

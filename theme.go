@@ -12,7 +12,8 @@ type theme struct {
 	timeHour         lipgloss.Color
 	timeDay          lipgloss.Color
 	timeOld          lipgloss.Color
-	indicator        lipgloss.Color
+	indicatorRunning lipgloss.Color
+	indicatorActive  lipgloss.Color
 	dim              lipgloss.Color
 	cursorBgAll      lipgloss.Color
 	cursorBgTmux     lipgloss.Color
@@ -43,7 +44,8 @@ var darkTheme = theme{
 	timeHour:         lipgloss.Color("#F9A825"),
 	timeDay:          lipgloss.Color("#4ECDC4"),
 	timeOld:          lipgloss.Color("#B983FF"),
-	indicator:        lipgloss.Color("#69F0AE"),
+	indicatorRunning: lipgloss.Color("#69F0AE"),
+	indicatorActive:  lipgloss.Color("#4B5563"),
 	dim:              lipgloss.Color("#6B7280"),
 	cursorBgAll:      lipgloss.Color("#2A3A4A"),
 	cursorBgTmux:     lipgloss.Color("#3A2A4A"),
@@ -74,7 +76,8 @@ var lightTheme = theme{
 	timeHour:         lipgloss.Color("#D97706"),
 	timeDay:          lipgloss.Color("#0891B2"),
 	timeOld:          lipgloss.Color("#7C3AED"),
-	indicator:        lipgloss.Color("#16A34A"),
+	indicatorRunning: lipgloss.Color("#16A34A"),
+	indicatorActive:  lipgloss.Color("#9CA3AF"),
 	dim:              lipgloss.Color("#9CA3AF"),
 	cursorBgAll:      lipgloss.Color("#D0E0F0"),
 	cursorBgTmux:     lipgloss.Color("#E0D0F0"),

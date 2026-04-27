@@ -16,7 +16,7 @@ import (
 
 type sessionItem struct {
 	session      Session
-	isRunning    bool
+	state        sessionState
 	isSelected   bool
 	showCheckbox bool
 }
@@ -93,8 +93,11 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	}
 
 	indicatorText := " "
-	if i.isRunning {
+	switch i.state {
+	case stateRunning:
 		indicatorText = "●"
+	case stateActive:
+		indicatorText = "○"
 	}
 
 	titleText := truncate.StringWithTail(i.session.Title, uint(d.titleW), "…")
@@ -135,7 +138,11 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	}
 
 	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
-	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(d.theme.indicator).Render(indicatorText)
+	indicatorColor := d.theme.indicatorActive
+	if i.state == stateRunning {
+		indicatorColor = d.theme.indicatorRunning
+	}
+	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(indicatorColor).Render(indicatorText)
 
 	var titleStr, dirStr string
 	if filterText != "" {

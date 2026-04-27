@@ -245,7 +245,7 @@ func (m *model) rebuildItems() {
 	if m.mode == "tmux" {
 		var run, other []Session
 		for _, s := range m.sessions {
-			if _, ok := m.running[s.ID]; ok {
+			if m.states[s.ID] > stateNone {
 				run = append(run, s)
 			} else {
 				other = append(other, s)
@@ -258,11 +258,10 @@ func (m *model) rebuildItems() {
 
 	items := make([]list.Item, 0, len(m.sessions))
 	for _, s := range ordered {
-		_, isRunning := m.running[s.ID]
 		_, isSelected := m.selected[s.ID]
 		items = append(items, sessionItem{
 			session:      s,
-			isRunning:    isRunning,
+			state:        m.states[s.ID],
 			isSelected:   isSelected,
 			showCheckbox: m.deleteMode,
 		})

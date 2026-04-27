@@ -16,7 +16,7 @@ type model struct {
 	list        list.Model
 	delegate    *sessionDelegate
 	sessions    []Session
-	running     map[string]struct{}
+	states      map[string]sessionState
 	firstMsgs   map[string]previewData
 	selected    map[string]struct{}
 	deleteMode  bool
@@ -89,7 +89,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 		return nil, fmt.Errorf("no sessions found")
 	}
 
-	running := getRunningSessionIDs()
+	states := getSessionStates(sessions)
 
 	isDark := detectDarkMode()
 	theme := themeForDark[isDark]
@@ -105,7 +105,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 	if initialMode == "tmux" {
 		var run, other []Session
 		for _, s := range sessions {
-			if _, ok := running[s.ID]; ok {
+			if states[s.ID] > stateNone {
 				run = append(run, s)
 			} else {
 				other = append(other, s)
@@ -118,8 +118,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 
 	items := make([]list.Item, 0, len(sessions))
 	for _, s := range ordered {
-		_, isRunning := running[s.ID]
-		items = append(items, sessionItem{session: s, isRunning: isRunning})
+		items = append(items, sessionItem{session: s, state: states[s.ID]})
 	}
 
 	l := list.New(items, delegate, 80, 20)
@@ -149,7 +148,7 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 		list:        l,
 		delegate:    delegate,
 		sessions:    sessions,
-		running:     running,
+		states:      states,
 		firstMsgs:   make(map[string]previewData),
 		selected:    make(map[string]struct{}),
 		mode:        initialMode,
@@ -225,7 +224,7 @@ func (m *model) finishRename() {
 		sessions, err := getSessions(m.dbPath)
 		if err == nil {
 			m.sessions = sessions
-			m.running = getRunningSessionIDs()
+			m.states = getSessionStates(m.sessions)
 			m.rebuildItems()
 		}
 	}
@@ -267,7 +266,7 @@ func (m model) executeDelete() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.sessions = sessions
-	m.running = getRunningSessionIDs()
+	m.states = getSessionStates(sessions)
 	m.rebuildItems()
 
 	return m, nil

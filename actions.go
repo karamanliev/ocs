@@ -25,27 +25,87 @@ func resumeSession(cmd, id string) {
 	_ = c.Run()
 }
 
-func findTmuxWindowWithSession(tmuxPath, sessionName, id string) (string, bool) {
-	out, err := exec.Command(tmuxPath, "list-panes", "-t", sessionName, "-F", "#{window_index} #{pane_pid}").Output()
-	if err != nil {
-		return "", false
+// findTmuxWindow locates a tmux window running opencode for the given session.
+//
+// Strategy (exact ID match only, never falls back to cwd):
+//  1. Check panes tagged with @ocs_session_id by a previous ocs launch
+//  2. Scan /proc for opencode processes launched with -s <id>, read TMUX_PANE
+//     from their environment to map back to a tmux window
+//
+// Returns (tmuxSessionName, windowIndex, found).
+func findTmuxWindow(tmuxPath, id string) (string, string, bool) {
+	if id == "" {
+		return "", "", false
 	}
+
+	// Step 1: check ocs pane tags
+	out, err := exec.Command(tmuxPath, "list-panes", "-a",
+		"-F", "#{pane_id} #{session_name} #{window_index} #{@ocs_session_id}").Output()
+	if err != nil {
+		return "", "", false
+	}
+	type paneInfo struct{ sessName, winIdx string }
+	panes := make(map[string]paneInfo)
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 2 {
+		if len(fields) < 3 {
 			continue
 		}
-		winIdx, pid := fields[0], fields[1]
+		panes[fields[0]] = paneInfo{fields[1], fields[2]}
+		// Tagged pane with matching session ID
+		if len(fields) == 4 && fields[3] == id {
+			return fields[1], fields[2], true
+		}
+	}
+
+	// Step 2: scan /proc for opencode -s <id>
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return "", "", false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if _, err := strconv.Atoi(e.Name()); err != nil {
+			continue
+		}
+		pid := e.Name()
 		data, err := os.ReadFile(fmt.Sprintf("/proc/%s/cmdline", pid))
 		if err != nil {
 			continue
 		}
 		cmdline := strings.ReplaceAll(string(data), "\x00", " ")
-		if strings.Contains(cmdline, "opencode") && strings.Contains(cmdline, id) {
-			return winIdx, true
+		if !isOpencodeCmdline(cmdline) {
+			continue
+		}
+		if extractSessionIDFromCmdline(cmdline) != id {
+			continue
+		}
+		environ, err := os.ReadFile(fmt.Sprintf("/proc/%s/environ", pid))
+		if err != nil {
+			continue
+		}
+		for _, env := range strings.Split(string(environ), "\x00") {
+			if strings.HasPrefix(env, "TMUX_PANE=") {
+				paneID := strings.TrimPrefix(env, "TMUX_PANE=")
+				if info, ok := panes[paneID]; ok {
+					return info.sessName, info.winIdx, true
+				}
+			}
 		}
 	}
-	return "", false
+	return "", "", false
+}
+
+func attachTmux(tmuxPath, sessionName string) {
+	if os.Getenv("TMUX") != "" {
+		c := exec.Command(tmuxPath, "switch-client", "-t", sessionName)
+		c.Stderr = os.Stderr
+		_ = c.Run()
+	} else {
+		syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", sessionName}, os.Environ())
+	}
 }
 
 func ctrlTmux(agentPath, id, dir string) {
@@ -55,6 +115,14 @@ func ctrlTmux(agentPath, id, dir string) {
 		return
 	}
 
+	// If this exact session is already in a tmux window, focus it.
+	if targetSess, winIdx, found := findTmuxWindow(tmuxPath, id); found {
+		_ = exec.Command(tmuxPath, "select-window", "-t", targetSess+":"+winIdx).Run()
+		attachTmux(tmuxPath, targetSess)
+		return
+	}
+
+	// Not found: create a window in a session named after the directory.
 	sessionName := filepath.Base(dir)
 	if sessionName == "" || sessionName == "." || sessionName == "/" {
 		sessionName = "default"
@@ -62,8 +130,7 @@ func ctrlTmux(agentPath, id, dir string) {
 	sessionName = strings.ReplaceAll(sessionName, "/", "-")
 	sessionName = strings.ReplaceAll(sessionName, "\\", "-")
 
-	exists := exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() == nil
-	if !exists {
+	if exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() != nil {
 		c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
 		c.Stderr = os.Stderr
 		if err := c.Run(); err != nil {
@@ -72,35 +139,30 @@ func ctrlTmux(agentPath, id, dir string) {
 		}
 	}
 
-	if winIdx, found := findTmuxWindowWithSession(tmuxPath, sessionName, id); found {
-		c := exec.Command(tmuxPath, "select-window", "-t", sessionName+":"+winIdx)
-		c.Stderr = os.Stderr
-		_ = c.Run()
-	} else {
-		out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
-		maxIdx := -1
-		for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			s = strings.TrimSpace(s)
-			if s == "" {
-				continue
-			}
-			if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
-				maxIdx = n
-			}
+	out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
+	maxIdx := -1
+	for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
 		}
-		c := exec.Command(tmuxPath, "new-window", "-t", fmt.Sprintf("%s:%d", sessionName, maxIdx+1), "-c", dir, "--", agentPath, "-s", id)
-		c.Stderr = os.Stderr
-		if err := c.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
-			return
+		if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
+			maxIdx = n
 		}
+	}
+	winTarget := fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
+	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-c", dir, "--", agentPath, "-s", id)
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
+		return
 	}
 
-	if os.Getenv("TMUX") != "" {
-		c := exec.Command(tmuxPath, "switch-client", "-t", sessionName)
-		c.Stderr = os.Stderr
-		_ = c.Run()
-	} else {
-		syscall.Exec(tmuxPath, []string{"tmux", "attach-session", "-t", sessionName}, os.Environ())
+	// Tag the new pane so we can find it later without /proc scanning.
+	paneOut, _ := exec.Command(tmuxPath, "list-panes", "-t", winTarget, "-F", "#{pane_id}").Output()
+	if paneID := strings.TrimSpace(string(paneOut)); paneID != "" {
+		_ = exec.Command(tmuxPath, "set-option", "-p", "-t", paneID, "@ocs_session_id", id).Run()
 	}
+
+	attachTmux(tmuxPath, sessionName)
 }
