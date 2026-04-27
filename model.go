@@ -216,7 +216,12 @@ func (m *model) finishRename() {
 	}
 	newTitle := strings.TrimSpace(m.renameInput.Value())
 	if newTitle != "" {
-		_ = renameSession(m.dbPath, m.renameID, newTitle)
+		if err := renameSession(m.dbPath, m.renameID, newTitle); err != nil {
+			m.renameID = ""
+			m.renameInput.Blur()
+			m.renameInput.SetValue("")
+			return
+		}
 		sessions, err := getSessions(m.dbPath)
 		if err == nil {
 			m.sessions = sessions
