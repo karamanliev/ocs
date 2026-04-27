@@ -171,6 +171,7 @@ type theme struct {
 	previewTitleFg   lipgloss.Color
 	previewContentFg lipgloss.Color
 	filterPrompt     lipgloss.Color
+	filterMatch      lipgloss.Color
 	accent           lipgloss.Color
 	textMain         lipgloss.Color
 	textMuted        lipgloss.Color
@@ -201,6 +202,7 @@ var darkTheme = theme{
 	previewTitleFg:   lipgloss.Color("#FFFFFF"),
 	previewContentFg: lipgloss.Color("#D1D5DB"),
 	filterPrompt:     lipgloss.Color("#F9A825"),
+	filterMatch:      lipgloss.Color("#FF8C00"),
 	accent:           lipgloss.Color("#60A5FA"),
 	textMain:         lipgloss.Color("#E5E7EB"),
 	textMuted:        lipgloss.Color("#4B5563"),
@@ -231,6 +233,7 @@ var lightTheme = theme{
 	previewTitleFg:   lipgloss.Color("#111827"),
 	previewContentFg: lipgloss.Color("#374151"),
 	filterPrompt:     lipgloss.Color("#D97706"),
+	filterMatch:      lipgloss.Color("#E65100"),
 	accent:           lipgloss.Color("#2563EB"),
 	textMain:         lipgloss.Color("#1F2937"),
 	textMuted:        lipgloss.Color("#D1D5DB"),
@@ -342,6 +345,57 @@ func padRight(s string, width int) string {
 	return s + strings.Repeat(" ", width-w)
 }
 
+// highlightSubstring returns text with case-insensitive matches of filter
+// wrapped in matchColor foreground. Non-matching text is left unstyled.
+func highlightSubstring(text, filter string, matchColor lipgloss.Color) string {
+	if filter == "" || text == "" {
+		return text
+	}
+	lower := strings.ToLower(text)
+	fl := strings.ToLower(filter)
+	ms := lipgloss.NewStyle().Foreground(matchColor)
+	var buf strings.Builder
+	i := 0
+	for i < len(text) {
+		idx := strings.Index(lower[i:], fl)
+		if idx < 0 {
+			buf.WriteString(text[i:])
+			break
+		}
+		buf.WriteString(text[i : i+idx])
+		buf.WriteString(ms.Render(text[i+idx : i+idx+len(filter)]))
+		i = i + idx + len(filter)
+	}
+	return buf.String()
+}
+
+// highlightSubstringStyled applies defaultFg to non-matching parts and
+// matchColor to matching parts.
+func highlightSubstringStyled(text, filter string, defaultFg, matchColor lipgloss.Color) string {
+	if filter == "" || text == "" {
+		return lipgloss.NewStyle().Foreground(defaultFg).Render(text)
+	}
+	lower := strings.ToLower(text)
+	fl := strings.ToLower(filter)
+	ds := lipgloss.NewStyle().Foreground(defaultFg)
+	ms := lipgloss.NewStyle().Foreground(matchColor)
+	var buf strings.Builder
+	i := 0
+	for i < len(text) {
+		idx := strings.Index(lower[i:], fl)
+		if idx < 0 {
+			buf.WriteString(ds.Render(text[i:]))
+			break
+		}
+		if idx > 0 {
+			buf.WriteString(ds.Render(text[i : i+idx]))
+		}
+		buf.WriteString(ms.Render(text[i+idx : i+idx+len(filter)]))
+		i = i + idx + len(filter)
+	}
+	return buf.String()
+}
+
 func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
 	i, ok := item.(sessionItem)
 	if !ok {
@@ -369,8 +423,17 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 
 	prefix := "  "
 
+	// Grab active filter text for highlighting (not applied to TIME column)
+	filterText := ""
+	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
+		filterText = m.FilterInput.Value()
+	}
+
 	if isCursor {
-		// Build plain line, pad to full width, then apply background
+		// Build line with optional orange highlights, pad, then apply background
+		hTitle := padRight(highlightSubstring(titleText, filterText, d.theme.filterMatch), d.titleW)
+		hDir := padRight(highlightSubstring(dirText, filterText, d.theme.filterMatch), d.dirW)
+
 		var parts []string
 		parts = append(parts, prefix)
 		parts = append(parts, padRight(timeText, d.timeW)+" ")
@@ -378,8 +441,8 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 			parts = append(parts, padRight(checkboxText, d.checkboxW)+" ")
 		}
 		parts = append(parts, padRight(indicatorText, d.indicatorW)+" ")
-		parts = append(parts, padRight(titleText, d.titleW)+" ")
-		parts = append(parts, padRight(dirText, d.dirW))
+		parts = append(parts, hTitle+" ")
+		parts = append(parts, hDir)
 
 		line := strings.Join(parts, "")
 		vis := lipgloss.Width(line)
@@ -395,11 +458,18 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		return
 	}
 
-	// Non-cursor: individual column colors
+	// Non-cursor: individual column colors with optional highlights
 	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
 	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(d.theme.indicator).Render(indicatorText)
-	titleStr := lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
-	dirStr := lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(true).Render(dirText)
+
+	var titleStr, dirStr string
+	if filterText != "" {
+		titleStr = padRight(highlightSubstringStyled(titleText, filterText, d.theme.textMain, d.theme.filterMatch), d.titleW)
+		dirStr = padRight(highlightSubstringStyled(dirText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
+	} else {
+		titleStr = lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
+		dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(true).Render(dirText)
+	}
 
 	var parts []string
 	parts = append(parts, prefix)
