@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -604,7 +605,7 @@ func parseBackgroundResponse(s string) (bool, error) {
 	return brightness < 128, nil
 }
 
-func newModel() (*model, error) {
+func newModel(startTmux bool) (*model, error) {
 	agentPath, err := exec.LookPath("opencode")
 	if err != nil {
 		return nil, fmt.Errorf("opencode not found in PATH")
@@ -631,6 +632,11 @@ func newModel() (*model, error) {
 	}
 
 	delegate := newSessionDelegate(theme)
+	initialMode := "all"
+	if startTmux && hasTmux {
+		initialMode = "tmux"
+	}
+	delegate.mode = initialMode
 
 	items := make([]list.Item, 0, len(sessions))
 	for _, s := range sessions {
@@ -667,7 +673,7 @@ func newModel() (*model, error) {
 		running:     running,
 		firstMsgs:   make(map[string]string),
 		selected:    make(map[string]struct{}),
-		mode:        "all",
+		mode:        initialMode,
 		hasTmux:     hasTmux,
 		agentPath:   agentPath,
 		dbPath:      dbPath,
@@ -1552,7 +1558,11 @@ func ctrlTmux(agentPath, id, dir string) {
 // ─── Main ───────────────────────────────────────────────────────────────────
 
 func main() {
-	m, err := newModel()
+	var startTmux bool
+	flag.BoolVar(&startTmux, "tmux", false, "start in tmux mode")
+	flag.Parse()
+
+	m, err := newModel(startTmux)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
 		os.Exit(1)
