@@ -421,7 +421,7 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
 
 	card := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(borderColor).
 		Background(m.theme.modalBg).
 		Padding(1, 2).
