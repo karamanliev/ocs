@@ -45,6 +45,7 @@ type model struct {
 	spinner          spinner.Model
 	previewScroll    int
 	previewScrollMax int
+	pendingSelectRef *itemRef
 }
 
 type deleteDoneMsg struct{}

@@ -224,7 +224,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 		case " ":
-			if m.grouped {
+			if m.grouped && !m.deleteMode {
 				cmd := m.handleGroupSpace()
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
@@ -270,6 +270,22 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	oldIndex := m.list.Index()
 	m.list, cmd = m.list.Update(msg)
 	m.skipSeparatorSelection(oldIndex)
+
+	// After the list processes FilterMatchesMsg, filteredItems is
+	// repopulated. Resolve any deferred selection now that
+	// VisibleItems is valid again.
+	if m.pendingSelectRef != nil {
+		visible := m.list.VisibleItems()
+		if len(visible) > 0 {
+			for i, item := range visible {
+				if itemMatchesRef(item, *m.pendingSelectRef) {
+					m.list.Select(i)
+					break
+				}
+			}
+			m.pendingSelectRef = nil
+		}
+	}
 
 	if wasFiltering != m.list.SettingFilter() {
 		m.resize()
@@ -432,7 +448,17 @@ func (m *model) rebuildItemsFor(ref itemRef) tea.Cmd {
 
 	cmd := m.list.SetItems(items)
 	if len(items) > 0 {
-		m.list.Select(targetIndex)
+		if m.filterActive() {
+			// SetItems clears filteredItems and re-filters async. The cursor
+			// set here would be based on the full list, but VisibleItems will
+			// be a smaller filtered subset once FilterMatchesMsg arrives,
+			// causing a slice-bounds panic. Use 0 as a safe fallback and
+			// defer the real selection until the filter results come back.
+			m.list.Select(0)
+			m.pendingSelectRef = &ref
+		} else {
+			m.list.Select(targetIndex)
+		}
 	}
 	return cmd
 }

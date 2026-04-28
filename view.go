@@ -184,11 +184,7 @@ func (m model) renderFooter() string {
 	}
 
 	var left string
-	if m.deleteMode {
-		left = build("space", " toggle") + sepStyle.Render(" · ") +
-			build("enter", " delete") + sepStyle.Render(" · ") +
-			build("esc", " cancel")
-	} else if m.list.SettingFilter() {
+	if m.list.SettingFilter() {
 		prompt := "> " + m.list.FilterInput.Value()
 		line := lipgloss.NewStyle().Foreground(m.theme.filterPrompt).Render(prompt)
 		vis := lipgloss.Width(line)
@@ -196,6 +192,10 @@ func (m model) renderFooter() string {
 			line += strings.Repeat(" ", usable-vis)
 		}
 		return " " + line + " "
+	} else if m.deleteMode {
+		left = build("space", " toggle") + sepStyle.Render(" · ") +
+			build("enter", " delete") + sepStyle.Render(" · ") +
+			build("esc", " cancel")
 	} else {
 		var parts []string
 		parts = append(parts, build("/", " filter"))
