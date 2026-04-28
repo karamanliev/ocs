@@ -39,8 +39,9 @@ Requires Go 1.22+.
 
 ```bash
 ocs              # launch in ALL mode
-ocs -tmux        # launch directly in TMUX mode
-ocs -no-preview  # launch with preview pane hidden
+ocs --tmux        # launch directly in TMUX mode
+ocs --no-preview  # launch with preview pane hidden
+ocs --theme dark  # force dark theme (light also available)
 ```
 
 ## Modes
@@ -52,6 +53,23 @@ ocs -no-preview  # launch with preview pane hidden
 ## Theme
 
 `ocs` detects your terminal background (light or dark) on startup and live-reloads when the window regains focus. No manual toggle needed.
+
+When running inside a tmux popup, OSC 11 detection does not work because tmux intercepts the query. Use `--theme` to force the correct palette, or detect it before launching the popup:
+
+```bash
+# Example wrapper that detects theme outside tmux, then opens a popup
+ocs-popup() {
+  local theme
+  theme=$(detect-theme-here) # your own OSC 11 or $COLORFGBG check
+  tmux display-popup -E "ocs --theme=$theme"
+}
+```
+
+I personally use [darkman](https://gitlab.com/WhyNotHugo/darkman) and have this in my `~/.tmux.conf`, works perfect:
+
+```bash
+bind-key -n M-o run-shell 'theme=$(darkman get); tmux display-popup -w 80% -h 80% -E "ocs --tmux --theme=$theme"'
+```
 
 ## Preview
 
@@ -68,10 +86,16 @@ ocs -no-preview  # launch with preview pane hidden
 - `tmux` is optional; without it `ocs` works in ALL mode only
 - SQLite database is read from `$XDG_DATA_HOME/opencode/opencode.db`
 
+## Managing sessions in every tmux window
+
+In **TMUX** mode `ocs` keeps track of which opencode sessions are already running in tmux windows. When you select a session that already has a window, `ocs` switches to that window instead of creating a duplicate. Panes are tagged automatically so the mapping survives pane respawns and window renames.
+
+This means you can open `ocs` from any tmux window, pick a session, and end up exactly where that session lives, or create a fresh window if it is not running yet.
+
 ## TODO
 
-- [ ] Add `<C-g>` and `-grouped` flag which toggles grouping by path
-- [ ] Add `--theme` flag to target light or dark theme
+- [ ] Add `<C-g>` and `--grouped` flag which toggles grouping by path
+- [x] Add `--theme` flag to target light or dark theme
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
 - [ ] Add configurable keybinds
 - [ ] Rework CLI flags

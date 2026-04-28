@@ -88,7 +88,7 @@ func needsPreview(m model) tea.Cmd {
 	return fetchPreview(m.dbPath, id)
 }
 
-func newModel(startTmux bool, noPreview bool) (*model, error) {
+func newModel(startTmux bool, noPreview bool, themeOverride string) (*model, error) {
 	agentPath, err := exec.LookPath("opencode")
 	if err != nil {
 		return nil, fmt.Errorf("opencode not found in PATH")
@@ -109,6 +109,11 @@ func newModel(startTmux bool, noPreview bool) (*model, error) {
 	states := getSessionStates(sessions)
 
 	isDark := detectDarkMode()
+	if themeOverride == "dark" {
+		isDark = true
+	} else if themeOverride == "light" {
+		isDark = false
+	}
 	theme := themeForDark[isDark]
 
 	delegate := newSessionDelegate(theme)

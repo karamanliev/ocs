@@ -1,21 +1,48 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func main() {
-	var startTmux bool
-	var noPreview bool
-	flag.BoolVar(&startTmux, "tmux", false, "start in tmux mode")
-	flag.BoolVar(&noPreview, "no-preview", false, "start with preview pane hidden")
-	flag.Parse()
+func parseArgs() (startTmux, noPreview bool, theme string) {
+	for i := 1; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		switch {
+		case arg == "--tmux":
+			startTmux = true
+		case arg == "--no-preview":
+			noPreview = true
+		case arg == "--theme":
+			i++
+			if i >= len(os.Args) {
+				fmt.Fprintln(os.Stderr, "ocs: --theme requires a value")
+				os.Exit(1)
+			}
+			theme = os.Args[i]
+		case strings.HasPrefix(arg, "--theme="):
+			theme = strings.SplitN(arg, "=", 2)[1]
+		case arg == "--help":
+			fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\nFlags:\n", os.Args[0])
+			fmt.Fprintln(os.Stderr, "  --tmux         start in tmux mode")
+			fmt.Fprintln(os.Stderr, "  --no-preview   start with preview pane hidden")
+			fmt.Fprintln(os.Stderr, "  --theme value  force theme: dark or light (default auto-detect)")
+			os.Exit(0)
+		default:
+			fmt.Fprintf(os.Stderr, "ocs: unknown flag %s\n", arg)
+			os.Exit(1)
+		}
+	}
+	return
+}
 
-	m, err := newModel(startTmux, noPreview)
+func main() {
+	startTmux, noPreview, theme := parseArgs()
+
+	m, err := newModel(startTmux, noPreview, theme)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
 		os.Exit(1)
