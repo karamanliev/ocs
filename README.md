@@ -4,10 +4,11 @@ A fast terminal UI for managing [OpenCode](https://opencode.ai) sessions.
 
 `ocs` reads your local OpenCode SQLite database directly and gives you a keyboard-driven interface to resume, attach, rename, preview, and delete sessions. No fzf, no subprocess hacks, just a single static binary.
 
-https://github.com/user-attachments/assets/029e4199-8e3e-4dda-bee4-a6f7ad915ad8
+https://github.com/user-attachments/assets/04150324-edac-415e-babe-ab96d16b9b81
 
 ## Features
 
+- **Pure Go** — static binary, zero runtime dependencies beyond `opencode` and optionally `tmux`
 - **Dual mode** — `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
 - **Fuzzy filtering** — type `/` to filter sessions in real time
 - **Preview pane** — visible by default, auto-moves right or below based on terminal width
@@ -16,8 +17,7 @@ https://github.com/user-attachments/assets/029e4199-8e3e-4dda-bee4-a6f7ad915ad8
 - **Rename** — inline session rename
 - **Running indicator** — green dot shows which sessions have active tmux panes
 - **Auto theme** — detects light/dark terminal background on startup and live-reloads on focus change
-- **Mode-colored UI** — cursor highlight, border title, and footer keys shift between steel blue (ALL) and dusty purple (TMUX)
-- **Pure Go** — static binary, zero runtime dependencies beyond `opencode` and optionally `tmux`
+- **Mouse support** — scroll lists and preview pane, select rows, expand/collapse groups
 
 ## Installation
 
