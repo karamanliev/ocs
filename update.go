@@ -420,7 +420,7 @@ func (m *model) rebuildItemsFor(ref itemRef) tea.Cmd {
 	}
 
 	ordered := orderedSessions(m.sessions, m.states, m.mode, m.grouped)
-	items := buildListItems(ordered, m.groups, m.states, m.selected, m.grouped, m.filterActive(), m.matchingGroupPaths())
+	items := buildListItems(ordered, m.groups, m.states, m.selected, m.grouped, m.filterActive(), m.matchingGroupPaths(), m.mode)
 	for i := range items {
 		if sessItem, ok := items[i].(sessionItem); ok {
 			sessItem.showCheckbox = m.deleteMode

@@ -131,7 +131,7 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 
 	ordered := orderedSessions(sessions, states, initialMode, grouped)
 	groups := buildGroups(sessions, nil)
-	items := buildListItems(ordered, groups, states, nil, grouped, false, nil)
+	items := buildListItems(ordered, groups, states, nil, grouped, false, nil, initialMode)
 
 	l := list.New(items, delegate, 80, 20)
 	l.SetShowTitle(false)
@@ -374,7 +374,7 @@ func (m model) matchingGroupPaths() map[string]struct{} {
 	return matches
 }
 
-func buildListItems(ordered []Session, groups []groupInfo, states map[string]sessionState, selected map[string]struct{}, grouped bool, filterActive bool, matchingGroups map[string]struct{}) []list.Item {
+func buildListItems(ordered []Session, groups []groupInfo, states map[string]sessionState, selected map[string]struct{}, grouped bool, filterActive bool, matchingGroups map[string]struct{}, mode string) []list.Item {
 	if !grouped {
 		items := make([]list.Item, 0, len(ordered))
 		for _, s := range ordered {
@@ -408,7 +408,20 @@ func buildListItems(ordered []Session, groups []groupInfo, states map[string]ses
 		if !expanded {
 			continue
 		}
-		for _, id := range g.sessionIDs {
+		ids := g.sessionIDs
+		if mode == "tmux" {
+			var runIDs, otherIDs []string
+			for _, id := range g.sessionIDs {
+				if states[id] > stateNone {
+					runIDs = append(runIDs, id)
+				} else {
+					otherIDs = append(otherIDs, id)
+				}
+			}
+			ids = append(runIDs, otherIDs...)
+		}
+
+		for _, id := range ids {
 			s := sessionByID[id]
 			_, isSelected := selected[s.ID]
 			items = append(items, sessionItem{
