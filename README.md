@@ -1,5 +1,7 @@
 # ocs
 
+[![GitHub Releases](https://img.shields.io/github/downloads/karamanliev/ocs/total)](https://github.com/karamanliev/ocs/releases) [![GitHub tag](https://img.shields.io/github/v/tag/karamanliev/ocs?color=blue)](https://github.com/karamanliev/ocs/releases/latest) [![build](https://github.com/karamanliev/ocs/actions/workflows/build.yml/badge.svg)](https://github.com/karamanliev/ocs/actions/workflows/build.yml) [![test](https://github.com/karamanliev/ocs/actions/workflows/test.yml/badge.svg)](https://github.com/karamanliev/ocs/actions/workflows/test.yml)
+
 A fast terminal UI for managing [OpenCode](https://opencode.ai) sessions.
 
 `ocs` reads your local OpenCode SQLite database directly and gives you a keyboard-driven interface to resume, attach, rename, preview, and delete sessions. No fzf, no subprocess hacks, just a single static binary.
