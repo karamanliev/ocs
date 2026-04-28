@@ -41,11 +41,11 @@ Requires Go 1.22+.
 ## Usage
 
 ```bash
-ocs              # launch in ALL mode, grouped by path
-ocs --tmux        # launch directly in TMUX mode
+ocs                 # launch in ALL mode, grouped by path
+ocs --tmux          # launch directly in TMUX mode
 ocs --preview=false # launch with preview pane hidden
 ocs --grouped=false # start ungrouped
-ocs --theme dark  # force dark theme (light also available)
+ocs --theme dark    # force dark theme (light also available)
 ```
 
 ## Keybinds
@@ -121,11 +121,12 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 - [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
   - [ ] `<C-x>` closes the currently active/running tmux window
-  - [ ] `n` creates a new session in the path of the currently selected item and let the agent name it. `N` lets the user manually name the session. If in tmux mode also attaches/creates a tmux session in that path.
+  - [ ] `n` creates a new session in the path of the currently selected item/group and let the agent name it. `N` lets the user choose the filepath of the session. If in tmux mode also attaches/creates a tmux session in that path.
   - [ ] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
 - [ ] Add configurable keybinds, maybe a toml/json config file in `~/.config/ocs/config.{toml,json}`
 - [ ] Rework CLI flags (add more options, add `true/false` to already existing flags, etc)
 - [ ] Add sorting by different criteria to the session list
+- [ ] Add a popup with the keybinds, list only the most commonly used ones in the footer
 - [x] Add `--theme` flag to target `light` or `dark` theme
 
 ## License
