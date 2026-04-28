@@ -14,33 +14,35 @@ import (
 )
 
 type model struct {
-	list        list.Model
-	delegate    *sessionDelegate
-	sessions    []Session
-	states      map[string]sessionState
-	firstMsgs   map[string]previewData
-	selected    map[string]struct{}
-	deleteMode  bool
-	confirming  bool
-	showPreview bool
-	mode        string
-	hasTmux     bool
-	isDark      bool
-	agentPath   string
-	dbPath      string
-	width       int
-	height      int
-	actionID    string
-	actionDir   string
-	actionTitle string
-	actionTmux  bool
-	theme       theme
-	renameID    string
-	renameInput textinput.Model
-	lastClickAt   time.Time
-	lastClickIx   int
-	deleting      bool
-	spinner       spinner.Model
+	list             list.Model
+	delegate         *sessionDelegate
+	sessions         []Session
+	groups           []groupInfo
+	states           map[string]sessionState
+	firstMsgs        map[string]previewData
+	selected         map[string]struct{}
+	deleteMode       bool
+	confirming       bool
+	showPreview      bool
+	grouped          bool
+	mode             string
+	hasTmux          bool
+	isDark           bool
+	agentPath        string
+	dbPath           string
+	width            int
+	height           int
+	actionID         string
+	actionDir        string
+	actionTitle      string
+	actionTmux       bool
+	theme            theme
+	renameID         string
+	renameInput      textinput.Model
+	lastClickAt      time.Time
+	lastClickIx      int
+	deleting         bool
+	spinner          spinner.Model
 	previewScroll    int
 	previewScrollMax int
 }
@@ -69,7 +71,9 @@ func fetchPreview(dbPath, sessionID string) tea.Cmd {
 
 func currentSessionID(m model) (string, bool) {
 	if item := m.list.SelectedItem(); item != nil {
-		return item.(sessionItem).session.ID, true
+		if sess, ok := sessionFromItem(item); ok {
+			return sess.ID, true
+		}
 	}
 	return "", false
 }
@@ -88,7 +92,7 @@ func needsPreview(m model) tea.Cmd {
 	return fetchPreview(m.dbPath, id)
 }
 
-func newModel(startTmux bool, noPreview bool, themeOverride string) (*model, error) {
+func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string) (*model, error) {
 	agentPath, err := exec.LookPath("opencode")
 	if err != nil {
 		return nil, fmt.Errorf("opencode not found in PATH")
@@ -122,26 +126,11 @@ func newModel(startTmux bool, noPreview bool, themeOverride string) (*model, err
 		initialMode = "tmux"
 	}
 	delegate.mode = initialMode
+	delegate.grouped = grouped
 
-	var ordered []Session
-	if initialMode == "tmux" {
-		var run, other []Session
-		for _, s := range sessions {
-			if states[s.ID] > stateNone {
-				run = append(run, s)
-			} else {
-				other = append(other, s)
-			}
-		}
-		ordered = append(run, other...)
-	} else {
-		ordered = sessions
-	}
-
-	items := make([]list.Item, 0, len(sessions))
-	for _, s := range ordered {
-		items = append(items, sessionItem{session: s, state: states[s.ID]})
-	}
+	ordered := orderedSessions(sessions, states, initialMode, grouped)
+	groups := buildGroups(sessions, nil)
+	items := buildListItems(ordered, groups, states, nil, grouped, false, nil)
 
 	l := list.New(items, delegate, 80, 20)
 	l.SetShowTitle(false)
@@ -150,6 +139,7 @@ func newModel(startTmux bool, noPreview bool, themeOverride string) (*model, err
 	l.SetShowHelp(false)
 	l.SetFilteringEnabled(true)
 	l.SetShowFilter(false)
+	l.Filter = list.UnsortedFilter
 	l.FilterInput.Prompt = "> "
 	promptStyle, cursorStyle := theme.filterStyles()
 	l.FilterInput.PromptStyle = promptStyle
@@ -174,9 +164,11 @@ func newModel(startTmux bool, noPreview bool, themeOverride string) (*model, err
 		list:        l,
 		delegate:    delegate,
 		sessions:    sessions,
+		groups:      groups,
 		states:      states,
 		firstMsgs:   make(map[string]previewData),
 		selected:    make(map[string]struct{}),
+		grouped:     grouped,
 		mode:        initialMode,
 		hasTmux:     hasTmux,
 		agentPath:   agentPath,
@@ -198,6 +190,7 @@ func (m *model) applyTheme() {
 	t := m.theme
 	m.delegate.theme = t
 	m.delegate.mode = m.mode
+	m.delegate.grouped = m.grouped
 	promptStyle, cursorStyle := t.filterStyles()
 	m.list.FilterInput.PromptStyle = promptStyle
 	m.list.FilterInput.Cursor.Style = cursorStyle
@@ -219,7 +212,10 @@ func (m model) setAction(useTmux bool) (tea.Model, tea.Cmd) {
 	if item == nil {
 		return m, nil
 	}
-	sess := item.(sessionItem).session
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		return m, nil
+	}
 	m.actionID = sess.ID
 	m.actionDir = sess.Directory
 	m.actionTitle = sess.Title
@@ -232,7 +228,10 @@ func (m *model) startRename() {
 	if item == nil {
 		return
 	}
-	sess := item.(sessionItem).session
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		return
+	}
 	m.renameID = sess.ID
 	m.renameInput.SetValue(sess.Title)
 	m.renameInput.Focus()
@@ -255,6 +254,7 @@ func (m *model) finishRename() tea.Cmd {
 		if err == nil {
 			m.sessions = sessions
 			m.states = getSessionStates(m.sessions)
+			m.syncGroups()
 			cmd = m.rebuildItems()
 		}
 	}
@@ -286,7 +286,12 @@ func (m *model) updatePreviewScrollMax() {
 		m.previewScrollMax = 0
 		return
 	}
-	cached, ok := m.firstMsgs[item.(sessionItem).session.ID]
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		m.previewScrollMax = 0
+		return
+	}
+	cached, ok := m.firstMsgs[sess.ID]
 	if !ok {
 		m.previewScrollMax = 0
 		return
@@ -316,4 +321,105 @@ func toggleMode(m model) string {
 		return "tmux"
 	}
 	return "all"
+}
+
+func orderedSessions(sessions []Session, states map[string]sessionState, mode string, grouped bool) []Session {
+	if grouped || mode != "tmux" {
+		return sessions
+	}
+
+	var run, other []Session
+	for _, s := range sessions {
+		if states[s.ID] > stateNone {
+			run = append(run, s)
+		} else {
+			other = append(other, s)
+		}
+	}
+	return append(run, other...)
+}
+
+func (m *model) syncGroups() {
+	collapsedByPath := make(map[string]bool, len(m.groups))
+	for _, g := range m.groups {
+		collapsedByPath[g.path] = g.collapsed
+	}
+	m.groups = buildGroups(m.sessions, collapsedByPath)
+}
+
+func (m model) filterActive() bool {
+	return m.list.FilterState() != list.Unfiltered && strings.TrimSpace(m.list.FilterValue()) != ""
+}
+
+func (m model) matchingGroupPaths() map[string]struct{} {
+	if !m.filterActive() {
+		return nil
+	}
+
+	term := m.list.FilterValue()
+	targets := make([]string, 0, len(m.sessions))
+	ordered := make([]Session, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		targets = append(targets, s.Title+" "+s.Directory)
+		ordered = append(ordered, s)
+	}
+
+	matches := make(map[string]struct{})
+	for _, rank := range m.list.Filter(term, targets) {
+		if rank.Index >= 0 && rank.Index < len(ordered) {
+			matches[ordered[rank.Index].Directory] = struct{}{}
+		}
+	}
+	return matches
+}
+
+func buildListItems(ordered []Session, groups []groupInfo, states map[string]sessionState, selected map[string]struct{}, grouped bool, filterActive bool, matchingGroups map[string]struct{}) []list.Item {
+	if !grouped {
+		items := make([]list.Item, 0, len(ordered))
+		for _, s := range ordered {
+			_, isSelected := selected[s.ID]
+			items = append(items, sessionItem{
+				session:    s,
+				state:      states[s.ID],
+				isSelected: isSelected,
+			})
+		}
+		return items
+	}
+
+	sessionByID := make(map[string]Session, len(ordered))
+	for _, s := range ordered {
+		sessionByID[s.ID] = s
+	}
+
+	items := make([]list.Item, 0, len(ordered)+len(groups))
+	for i, g := range groups {
+		expanded := !g.collapsed
+		if filterActive {
+			_, expanded = matchingGroups[g.path]
+		}
+		items = append(items, groupHeaderItem{
+			path:        g.path,
+			count:       len(g.sessionIDs),
+			collapsed:   !expanded,
+			filterValue: g.filterValue,
+		})
+		if !expanded {
+			continue
+		}
+		for _, id := range g.sessionIDs {
+			s := sessionByID[id]
+			_, isSelected := selected[s.ID]
+			items = append(items, sessionItem{
+				session:    s,
+				state:      states[s.ID],
+				isSelected: isSelected,
+				groupPath:  g.path,
+			})
+		}
+		if i < len(groups)-1 {
+			items = append(items, groupSeparatorItem{})
+		}
+	}
+	return items
 }

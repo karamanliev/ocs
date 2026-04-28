@@ -19,6 +19,7 @@ type sessionItem struct {
 	state        sessionState
 	isSelected   bool
 	showCheckbox bool
+	groupPath    string
 }
 
 func (i sessionItem) FilterValue() string {
@@ -27,9 +28,10 @@ func (i sessionItem) FilterValue() string {
 
 type sessionDelegate struct {
 	width, timeW, checkboxW, indicatorW, titleW, dirW int
-	showCheckbox                                         bool
-	mode                                                 string
-	theme                                                theme
+	showCheckbox                                      bool
+	grouped                                           bool
+	mode                                              string
+	theme                                             theme
 }
 
 func newSessionDelegate(t theme) *sessionDelegate {
@@ -63,6 +65,11 @@ func (d *sessionDelegate) updateWidths(totalWidth int) {
 	if remain < 20 {
 		remain = 20
 	}
+	if d.grouped {
+		d.titleW = remain
+		d.dirW = 0
+		return
+	}
 	d.titleW = remain * 50 / 100
 	d.dirW = remain - d.titleW
 }
@@ -74,6 +81,15 @@ func (d *sessionDelegate) ShortHelp() []key.Binding            { return nil }
 func (d *sessionDelegate) FullHelp() [][]key.Binding           { return nil }
 
 func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	if _, ok := item.(groupSeparatorItem); ok {
+		fmt.Fprint(w, strings.Repeat(" ", d.width))
+		return
+	}
+	if header, ok := item.(groupHeaderItem); ok {
+		d.renderGroupHeader(w, m, index, header)
+		return
+	}
+
 	i, ok := item.(sessionItem)
 	if !ok {
 		return
@@ -100,8 +116,18 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		indicatorText = "○"
 	}
 
-	titleText := truncate.StringWithTail(i.session.Title, uint(d.titleW), "…")
-	dirText := truncate.StringWithTail(i.session.Directory, uint(d.dirW), "…")
+	titleWidth := d.titleW
+	if d.grouped {
+		titleWidth -= 2
+		if titleWidth < 8 {
+			titleWidth = 8
+		}
+	}
+	titleText := truncate.StringWithTail(i.session.Title, uint(titleWidth), "…")
+	dirText := ""
+	if !d.grouped {
+		dirText = truncate.StringWithTail(i.session.Directory, uint(d.dirW), "…")
+	}
 
 	prefix := "  "
 
@@ -111,8 +137,14 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	}
 
 	if isCursor {
+		if d.grouped {
+			titleText = "  " + titleText
+		}
 		hTitle := padRight(highlightSubstring(titleText, filterText, d.theme.filterMatch), d.titleW)
-		hDir := padRight(highlightSubstring(dirText, filterText, d.theme.filterMatch), d.dirW)
+		hDir := ""
+		if !d.grouped {
+			hDir = padRight(highlightSubstring(dirText, filterText, d.theme.filterMatch), d.dirW)
+		}
 
 		parts := []string{
 			prefix,
@@ -123,9 +155,11 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 		parts = append(parts,
 			padRight(indicatorText, d.indicatorW)+" ",
-			hTitle+" ",
-			hDir,
+			hTitle,
 		)
+		if !d.grouped {
+			parts = append(parts, " ", hDir)
+		}
 
 		line := strings.Join(parts, "")
 		vis := lipgloss.Width(line)
@@ -146,11 +180,21 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 
 	var titleStr, dirStr string
 	if filterText != "" {
+		if d.grouped {
+			titleText = "  " + titleText
+		}
 		titleStr = padRight(highlightSubstringStyled(titleText, filterText, d.theme.textMain, d.theme.filterMatch), d.titleW)
-		dirStr = padRight(highlightSubstringStyled(dirText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
+		if !d.grouped {
+			dirStr = padRight(highlightSubstringStyled(dirText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
+		}
 	} else {
+		if d.grouped {
+			titleText = "  " + titleText
+		}
 		titleStr = lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
-		dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(dirText)
+		if !d.grouped {
+			dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(dirText)
+		}
 	}
 
 	parts := []string{
@@ -166,9 +210,11 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	}
 	parts = append(parts,
 		indicatorStr+" ",
-		titleStr+" ",
-		dirStr,
+		titleStr,
 	)
+	if !d.grouped {
+		parts = append(parts, " ", dirStr)
+	}
 
 	line := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
 	visibleWidth := lipgloss.Width(line)
@@ -176,6 +222,30 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		line += strings.Repeat(" ", d.width-visibleWidth)
 	}
 	fmt.Fprint(w, line)
+}
+
+func (d *sessionDelegate) renderGroupHeader(w io.Writer, m list.Model, index int, item groupHeaderItem) {
+	isCursor := index == m.Index()
+	marker := "▶"
+	if !item.collapsed {
+		marker = "▼"
+	}
+	label := "  " + marker + " " + item.path + " "
+	count := "(" + strconv.Itoa(item.count) + ")"
+	line := label + count
+	line = padRight(truncate.StringWithTail(line, uint(max(1, d.width-2)), "…"), d.width)
+
+	base := lipgloss.NewStyle().Bold(true).Foreground(d.theme.dim)
+	accent := d.theme.titleColor(d.mode)
+	markStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
+	countStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
+	if isCursor {
+		base = base.Background(d.theme.cursorBg(d.mode)).Foreground(d.theme.dim)
+		markStyle = markStyle.Background(d.theme.cursorBg(d.mode))
+		countStyle = countStyle.Background(d.theme.cursorBg(d.mode))
+	}
+	baseLine := base.Render("  ") + markStyle.Render(marker) + base.Render(" "+item.path+" ")
+	fmt.Fprint(w, baseLine+countStyle.Render(count))
 }
 
 func padRight(s string, width int) string {

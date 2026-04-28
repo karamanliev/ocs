@@ -3,7 +3,6 @@ package main
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -35,6 +34,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.sessions = sessions
 		m.states = getSessionStates(sessions)
+		m.syncGroups()
 		cmd := m.rebuildItems()
 		return m, cmd
 
@@ -99,8 +99,15 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if len(ids) == 0 {
 				if item := m.list.SelectedItem(); item != nil {
-					ids = append(ids, item.(sessionItem).session.ID)
+					if sess, ok := sessionFromItem(item); ok {
+						ids = append(ids, sess.ID)
+					}
 				}
+			}
+			if len(ids) == 0 {
+				m.deleting = false
+				m.confirming = false
+				return m, nil
 			}
 			return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
 		case "n", "N", "esc", "q":
@@ -121,7 +128,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case " ":
 			if item := m.list.SelectedItem(); item != nil {
-				id := item.(sessionItem).session.ID
+				sess, ok := sessionFromItem(item)
+				if !ok {
+					return m, nil
+				}
+				id := sess.ID
 				if _, ok := m.selected[id]; ok {
 					delete(m.selected, id)
 				} else {
@@ -132,6 +143,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter", "ctrl+d":
+			if len(m.selected) == 0 {
+				if _, ok := currentSessionID(m); !ok {
+					return m, nil
+				}
+			}
 			m.confirming = true
 			return m, nil
 		}
@@ -161,10 +177,23 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showPreview = !m.showPreview
 			m.resize()
 			return m, needsPreview(m)
+		case "ctrl+g":
+			m.grouped = !m.grouped
+			if len(m.groups) == 0 {
+				m.syncGroups()
+			}
+			cmd := m.rebuildItems()
+			return m, tea.Batch(cmd, needsPreview(m))
 		case "ctrl+d":
 			m.deleteMode = true
 			cmd := m.rebuildItems()
 			return m, cmd
+		case "ctrl+space", "ctrl+@":
+			if m.grouped {
+				cmd := m.toggleAllGroups()
+				return m, tea.Batch(cmd, needsPreview(m))
+			}
+			return m, nil
 		case "ctrl+t":
 			if m.hasTmux {
 				m.mode = toggleMode(m)
@@ -175,6 +204,30 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+r":
 			m.startRename()
+			return m, nil
+		case "[":
+			if m.grouped {
+				return m.jumpGroup(-1)
+			}
+		case "]":
+			if m.grouped {
+				return m.jumpGroup(1)
+			}
+		case "h":
+			if m.grouped {
+				cmd := m.setCurrentGroupCollapsed(true)
+				return m, tea.Batch(cmd, needsPreview(m))
+			}
+		case "l":
+			if m.grouped {
+				cmd := m.setCurrentGroupCollapsed(false)
+				return m, tea.Batch(cmd, needsPreview(m))
+			}
+		case " ":
+			if m.grouped {
+				cmd := m.handleGroupSpace()
+				return m, tea.Batch(cmd, needsPreview(m))
+			}
 			return m, nil
 		case "alt+enter", "ctrl+o":
 			if m.hasTmux {
@@ -192,10 +245,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if !m.deleteMode {
 		switch msg.String() {
 		case "ctrl+n":
+			oldIndex := m.list.Index()
 			m.list.CursorDown()
+			m.skipSeparatorSelection(oldIndex)
 			return m.afterMove()
 		case "ctrl+p":
+			oldIndex := m.list.Index()
 			m.list.CursorUp()
+			m.skipSeparatorSelection(oldIndex)
 			return m.afterMove()
 		}
 	}
@@ -205,13 +262,20 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	wasFiltering := m.list.SettingFilter()
+	oldFilterState := m.list.FilterState()
+	oldFilterValue := m.list.FilterValue()
 	oldID, _ := currentSessionID(m)
 
 	var cmd tea.Cmd
+	oldIndex := m.list.Index()
 	m.list, cmd = m.list.Update(msg)
+	m.skipSeparatorSelection(oldIndex)
 
 	if wasFiltering != m.list.SettingFilter() {
 		m.resize()
+	}
+	if m.grouped && (oldFilterState != m.list.FilterState() || oldFilterValue != m.list.FilterValue()) {
+		cmd = tea.Batch(cmd, m.rebuildItems())
 	}
 
 	newID, hasNew := currentSessionID(m)
@@ -253,10 +317,14 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.Button {
 	case tea.MouseButtonWheelUp:
+		oldIndex := m.list.Index()
 		m.list.CursorUp()
+		m.skipSeparatorSelection(oldIndex)
 		return m.afterMove()
 	case tea.MouseButtonWheelDown:
+		oldIndex := m.list.Index()
 		m.list.CursorDown()
+		m.skipSeparatorSelection(oldIndex)
 		return m.afterMove()
 	}
 
@@ -271,6 +339,11 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 	oldIx := m.list.Index()
 	m.list.Select(ix)
+	if item := m.list.SelectedItem(); item != nil {
+		if header, ok := item.(groupHeaderItem); ok && m.grouped {
+			return m.toggleGroupByPath(header.path, header.collapsed)
+		}
+	}
 
 	now := time.Now()
 	doubleClick := m.lastClickIx == ix && !m.lastClickAt.IsZero() && now.Sub(m.lastClickAt) <= 400*time.Millisecond
@@ -284,6 +357,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if ix != oldIx {
+		m.skipSeparatorSelection(oldIx)
 		return m.afterMove()
 	}
 
@@ -316,35 +390,51 @@ func (m model) listIndexAt(x int, y int) (int, bool) {
 }
 
 func (m *model) rebuildItems() tea.Cmd {
+	ref := itemRefFromItem(m.list.SelectedItem())
+	return m.rebuildItemsFor(ref)
+}
+
+func (m *model) rebuildItemsFor(ref itemRef) tea.Cmd {
 	m.delegate.showCheckbox = m.deleteMode
+	m.delegate.grouped = m.grouped
 	m.resize()
 
-	var ordered []Session
-	if m.mode == "tmux" {
-		var run, other []Session
-		for _, s := range m.sessions {
-			if m.states[s.ID] > stateNone {
-				run = append(run, s)
-			} else {
-				other = append(other, s)
-			}
-		}
-		ordered = append(run, other...)
-	} else {
-		ordered = m.sessions
+	if len(m.groups) == 0 {
+		m.syncGroups()
 	}
 
-	items := make([]list.Item, 0, len(m.sessions))
-	for _, s := range ordered {
-		_, isSelected := m.selected[s.ID]
-		items = append(items, sessionItem{
-			session:      s,
-			state:        m.states[s.ID],
-			isSelected:   isSelected,
-			showCheckbox: m.deleteMode,
-		})
+	ordered := orderedSessions(m.sessions, m.states, m.mode, m.grouped)
+	items := buildListItems(ordered, m.groups, m.states, m.selected, m.grouped, m.filterActive(), m.matchingGroupPaths())
+	for i := range items {
+		if sessItem, ok := items[i].(sessionItem); ok {
+			sessItem.showCheckbox = m.deleteMode
+			items[i] = sessItem
+		}
 	}
-	return m.list.SetItems(items)
+
+	targetIndex := 0
+	fallback := itemRef{groupPath: ref.groupPath, header: ref.groupPath != ""}
+	for i, item := range items {
+		if itemMatchesRef(item, ref) {
+			targetIndex = i
+			fallback = itemRef{}
+			break
+		}
+	}
+	if fallback.header {
+		for i, item := range items {
+			if itemMatchesRef(item, fallback) {
+				targetIndex = i
+				break
+			}
+		}
+	}
+
+	cmd := m.list.SetItems(items)
+	if len(items) > 0 {
+		m.list.Select(targetIndex)
+	}
+	return cmd
 }
 
 func (m *model) resize() {
@@ -355,4 +445,154 @@ func (m *model) resize() {
 	}
 	m.delegate.updateWidths(innerListWidth)
 	m.list.SetSize(innerListWidth, layout.listHeight)
+}
+
+func (m model) groupCollapsed(path string) (bool, bool) {
+	for _, g := range m.groups {
+		if g.path == path {
+			return g.collapsed, true
+		}
+	}
+	return false, false
+}
+
+func (m *model) setGroupCollapsed(path string, collapsed bool) tea.Cmd {
+	if path == "" {
+		return nil
+	}
+	changed := false
+	for i := range m.groups {
+		if m.groups[i].path != path {
+			continue
+		}
+		if m.groups[i].collapsed == collapsed {
+			return nil
+		}
+		m.groups[i].collapsed = collapsed
+		changed = true
+		break
+	}
+	if !changed {
+		return nil
+	}
+	return m.rebuildItemsFor(itemRef{groupPath: path, header: true})
+}
+
+func (m *model) setCurrentGroupCollapsed(collapsed bool) tea.Cmd {
+	path, ok := groupPathFromItem(m.list.SelectedItem())
+	if !ok {
+		return nil
+	}
+	return m.setGroupCollapsed(path, collapsed)
+}
+
+func (m *model) handleGroupSpace() tea.Cmd {
+	item := m.list.SelectedItem()
+	if item == nil {
+		return nil
+	}
+	path, ok := groupPathFromItem(item)
+	if !ok {
+		return nil
+	}
+	if header, ok := item.(groupHeaderItem); ok && header.collapsed {
+		return m.setGroupCollapsed(path, false)
+	}
+	return m.setGroupCollapsed(path, true)
+}
+
+func (m *model) toggleAllGroups() tea.Cmd {
+	if len(m.groups) == 0 {
+		return nil
+	}
+	expandAll := false
+	for _, g := range m.groups {
+		if g.collapsed {
+			expandAll = true
+			break
+		}
+	}
+
+	ref := itemRefFromItem(m.list.SelectedItem())
+	if !expandAll {
+		if path, ok := groupPathFromItem(m.list.SelectedItem()); ok {
+			ref = itemRef{groupPath: path, header: true}
+		}
+	}
+
+	for i := range m.groups {
+		m.groups[i].collapsed = !expandAll
+	}
+	return m.rebuildItemsFor(ref)
+}
+
+func (m *model) jumpGroup(delta int) (tea.Model, tea.Cmd) {
+	if !m.grouped || delta == 0 {
+		return m, nil
+	}
+	items := m.list.VisibleItems()
+	if len(items) == 0 {
+		return m, nil
+	}
+
+	headerIndices := make([]int, 0)
+	for i, item := range items {
+		if _, ok := item.(groupHeaderItem); ok {
+			headerIndices = append(headerIndices, i)
+		}
+	}
+	if len(headerIndices) == 0 {
+		return m, nil
+	}
+
+	current := m.list.GlobalIndex()
+	currentHeader := -1
+	for i := current; i >= 0; i-- {
+		if _, ok := items[i].(groupHeaderItem); ok {
+			currentHeader = i
+			break
+		}
+	}
+	if currentHeader < 0 {
+		currentHeader = headerIndices[0]
+	}
+
+	target := headerIndices[0]
+	for idx, headerIndex := range headerIndices {
+		if headerIndex == currentHeader {
+			if delta > 0 {
+				target = headerIndices[(idx+1)%len(headerIndices)]
+			} else {
+				target = headerIndices[(idx-1+len(headerIndices))%len(headerIndices)]
+			}
+			break
+		}
+	}
+
+	m.list.Select(target)
+	return m.afterMove()
+}
+
+func (m *model) toggleGroupByPath(path string, collapsed bool) (tea.Model, tea.Cmd) {
+	cmd := m.setGroupCollapsed(path, !collapsed)
+	return m, tea.Batch(cmd, needsPreview(*m))
+}
+
+func (m *model) skipSeparatorSelection(prevIndex int) {
+	for i := 0; i < 3; i++ {
+		item := m.list.SelectedItem()
+		if item == nil {
+			return
+		}
+		if _, ok := item.(groupSeparatorItem); !ok {
+			return
+		}
+		if m.list.Index() > prevIndex {
+			m.list.CursorDown()
+		} else if m.list.Index() > 0 {
+			m.list.CursorUp()
+		} else {
+			return
+		}
+	}
 }

@@ -3,19 +3,48 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func parseArgs() (startTmux, noPreview bool, theme string) {
+func parseBoolArg(name string, value string) bool {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ocs: %s must be true or false\n", name)
+		os.Exit(1)
+	}
+	return parsed
+}
+
+func parseOptionalBoolFlag(args []string, i *int, name string) bool {
+	arg := args[*i]
+	if arg == name {
+		if *i+1 < len(args) {
+			next := args[*i+1]
+			if next == "true" || next == "false" {
+				*i++
+				return parseBoolArg(name, next)
+			}
+		}
+		return true
+	}
+	return parseBoolArg(name, strings.SplitN(arg, "=", 2)[1])
+}
+
+func parseArgs() (startTmux, noPreview, grouped bool, theme string) {
+	preview := true
+	grouped = true
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
 		switch {
-		case arg == "--tmux":
-			startTmux = true
-		case arg == "--no-preview":
-			noPreview = true
+		case arg == "--tmux" || strings.HasPrefix(arg, "--tmux="):
+			startTmux = parseOptionalBoolFlag(os.Args, &i, "--tmux")
+		case arg == "--preview" || strings.HasPrefix(arg, "--preview="):
+			preview = parseOptionalBoolFlag(os.Args, &i, "--preview")
+		case arg == "--grouped" || strings.HasPrefix(arg, "--grouped="):
+			grouped = parseOptionalBoolFlag(os.Args, &i, "--grouped")
 		case arg == "--theme":
 			i++
 			if i >= len(os.Args) {
@@ -27,8 +56,9 @@ func parseArgs() (startTmux, noPreview bool, theme string) {
 			theme = strings.SplitN(arg, "=", 2)[1]
 		case arg == "--help":
 			fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\nFlags:\n", os.Args[0])
-			fmt.Fprintln(os.Stderr, "  --tmux         start in tmux mode")
-			fmt.Fprintln(os.Stderr, "  --no-preview   start with preview pane hidden")
+			fmt.Fprintln(os.Stderr, "  --tmux=bool     start in tmux mode, default false")
+			fmt.Fprintln(os.Stderr, "  --preview=bool  show preview pane, default true")
+			fmt.Fprintln(os.Stderr, "  --grouped=bool  group by path, default true")
 			fmt.Fprintln(os.Stderr, "  --theme value  force theme: dark or light (default auto-detect)")
 			os.Exit(0)
 		default:
@@ -36,13 +66,14 @@ func parseArgs() (startTmux, noPreview bool, theme string) {
 			os.Exit(1)
 		}
 	}
+	noPreview = !preview
 	return
 }
 
 func main() {
-	startTmux, noPreview, theme := parseArgs()
+	startTmux, noPreview, grouped, theme := parseArgs()
 
-	m, err := newModel(startTmux, noPreview, theme)
+	m, err := newModel(startTmux, noPreview, grouped, theme)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
 		os.Exit(1)

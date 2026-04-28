@@ -147,14 +147,17 @@ func (m model) renderColumnHeader() string {
 	timeH := lipgloss.NewStyle().Width(m.delegate.timeW).Bold(true).Foreground(m.theme.colHeaderFg).Render("TIME")
 	indH := lipgloss.NewStyle().Width(m.delegate.indicatorW).Render("")
 	titleH := lipgloss.NewStyle().Width(m.delegate.titleW).Bold(true).Foreground(m.theme.colHeaderFg).Render("TITLE")
-	dirH := lipgloss.NewStyle().Width(m.delegate.dirW).Bold(true).Foreground(m.theme.colHeaderFg).Render("PATH")
 
 	parts := []string{pad, timeH, " "}
 	if m.delegate.showCheckbox {
 		cbH := lipgloss.NewStyle().Width(m.delegate.checkboxW).Render("")
 		parts = append(parts, cbH, " ")
 	}
-	parts = append(parts, indH, " ", titleH, " ", dirH)
+	parts = append(parts, indH, " ", titleH)
+	if !m.grouped {
+		dirH := lipgloss.NewStyle().Width(m.delegate.dirW).Bold(true).Foreground(m.theme.colHeaderFg).Render("PATH")
+		parts = append(parts, " ", dirH)
+	}
 
 	line := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
 	visible := lipgloss.Width(line)
@@ -216,6 +219,11 @@ func (m model) renderFooter() string {
 				toggleLabel = " toggle all"
 			}
 			parts = append(parts, sepStyle.Render(" · ")+build("<C-t>", toggleLabel))
+		}
+		parts = append(parts, sepStyle.Render(" · ")+build("<C-g>", " group"))
+		if m.grouped {
+			parts = append(parts, sepStyle.Render(" · ")+build("space", " fold"))
+			parts = append(parts, sepStyle.Render(" · ")+build("<C-space>", " all"))
 		}
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-r>", " rename"))
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-d>", " delete"))
@@ -433,7 +441,7 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 
 func truncatePreviewLines(lines []string, limit int) []string {
 	if limit < 1 {
-		return nil
+		return append([]string(nil), lines...)
 	}
 	nonEmpty := 0
 	var keep []string
@@ -568,6 +576,7 @@ func (m model) renderPreviewPane(width int, height int) string {
 	padLeft := "  "
 	var header []string
 	header = append(header, "")
+	var bodyLines []string
 
 	var data previewData
 	loading := false
@@ -575,25 +584,33 @@ func (m model) renderPreviewPane(width int, height int) string {
 	if item == nil {
 		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("No session selected."))
 	} else {
-		sess := item.(sessionItem).session
-		header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
-			truncate.StringWithTail(sess.Title, uint(contentW), "...")))
-		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
-			truncate.StringWithTail(sess.Directory, uint(contentW), "...")))
-		header = append(header, "")
+		if sess, ok := sessionFromItem(item); ok {
+			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
+				truncate.StringWithTail(sess.Title, uint(contentW), "...")))
+			header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
+				truncate.StringWithTail(sess.Directory, uint(contentW), "...")))
+			header = append(header, "")
 
-		cached, ok := m.firstMsgs[sess.ID]
-		if !ok {
-			loading = true
-		} else {
-			data = cached
+			cached, ok := m.firstMsgs[sess.ID]
+			if !ok {
+				loading = true
+			} else {
+				data = cached
+			}
+		} else if groupHeader, ok := item.(groupHeaderItem); ok {
+			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
+				truncate.StringWithTail(groupHeader.path, uint(contentW), "...")))
+			header = append(header, "")
+			bodyLines = append(bodyLines,
+				padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(fmt.Sprintf("%d sessions in group", groupHeader.count)),
+				"",
+				padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Press space to fold or unfold."),
+			)
 		}
 	}
-
-	var bodyLines []string
 	if loading {
 		bodyLines = append(bodyLines, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Loading..."))
-	} else if item != nil {
+	} else if item != nil && len(bodyLines) == 0 {
 		bodyLines = m.buildPreviewLines(data, contentW)
 	}
 
@@ -677,9 +694,13 @@ func (m model) renderDeleteBox() string {
 		prompt = fmt.Sprintf("Delete %d sessions?", len(m.selected))
 	} else {
 		if item := m.list.SelectedItem(); item != nil {
-			prompt = fmt.Sprintf("Delete \"%s\"?", item.(sessionItem).session.Title)
-		} else {
+			if sess, ok := sessionFromItem(item); ok {
+				prompt = fmt.Sprintf("Delete \"%s\"?", sess.Title)
+			}
+		}
+		if prompt == "" {
 			prompt = "Delete session?"
+		} else {
 		}
 	}
 
@@ -722,7 +743,9 @@ func (m model) renderRenameBox() string {
 	item := m.list.SelectedItem()
 	var title string
 	if item != nil {
-		title = item.(sessionItem).session.Title
+		if sess, ok := sessionFromItem(item); ok {
+			title = sess.Title
+		}
 	}
 
 	boxWidth := 54
