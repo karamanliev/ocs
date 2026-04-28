@@ -10,9 +10,10 @@ https://github.com/user-attachments/assets/029e4199-8e3e-4dda-bee4-a6f7ad915ad8
 
 - **Dual mode** — `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
 - **Fuzzy filtering** — type `/` to filter sessions in real time
-- **Preview pane** — visible by default, toggle with `tab`, auto-moves right or below based on terminal width
-- **Batch delete** — `ctrl+d` to toggle checkboxes, `enter` to confirm
-- **Rename** — `ctrl+r` to rename a session inline
+- **Preview pane** — visible by default, auto-moves right or below based on terminal width
+- **Grouped view** — enabled by default, can be toggled on the fly
+- **Batch delete** — multi-select and confirm delete
+- **Rename** — inline session rename
 - **Running indicator** — green dot shows which sessions have active tmux panes
 - **Auto theme** — detects light/dark terminal background on startup and live-reloads on focus change
 - **Mode-colored UI** — cursor highlight, border title, and footer keys shift between steel blue (ALL) and dusty purple (TMUX)
@@ -38,16 +39,37 @@ Requires Go 1.22+.
 ## Usage
 
 ```bash
-ocs              # launch in ALL mode
+ocs              # launch in ALL mode, grouped by path
 ocs --tmux        # launch directly in TMUX mode
-ocs --no-preview  # launch with preview pane hidden
+ocs --preview=false # launch with preview pane hidden
+ocs --grouped=false # start ungrouped
 ocs --theme dark  # force dark theme (light also available)
 ```
 
+## Keybinds
+
+| Key | Action |
+| --- | --- |
+| `enter` | Open selected session, mode dependent: ALL resumes, TMUX opens in tmux; group headers do nothing |
+| `alt+enter`, `ctrl+o` | Open in tmux when in ALL mode, resume when in TMUX mode |
+| `ctrl+t` | Toggle ALL and TMUX mode |
+| `ctrl+g` | Toggle grouped view |
+| `/` | Start filtering sessions |
+| `space` | Collapse or expand current group |
+| `ctrl+space` | Collapse or expand all groups |
+| `h`, `l` | Collapse or expand current group |
+| `[` / `]` | Jump to previous or next group |
+| `ctrl+d` | Enter delete mode |
+| `ctrl+r` | Rename selected session |
+| `tab` | Toggle preview pane |
+| `J`, `K`, `shift+up`, `shift+down` | Scroll preview |
+| Mouse wheel | Scroll preview or list |
+| Mouse click | Select row, click group header to fold or unfold |
+
 ## Modes
 
-- **ALL** — the default. Pressing `enter` resumes the session directly. Press `alt+enter` or `ctrl+o` to open it in tmux instead.
-- **TMUX** — `enter` always opens the session in a tmux window. The title bar shows `[tmux]` and the UI shifts to purple tones.
+- **ALL** — the default. Pressing `enter` resumes the session directly.
+- **TMUX** — `enter` opens the session in a tmux window. The title bar shows `[tmux]` and the UI shifts to purple tones.
 
 
 ## Theme
@@ -75,10 +97,9 @@ bind-key -n M-o run-shell 'theme=$(darkman get); tmux display-popup -w 80% -h 80
 
 `ocs` shows a bordered preview pane by default. The pane displays the first user message for the selected session.
 
-- Press `tab` to toggle it on or off
 - On wider terminals it appears to the right of the session list
 - On narrower terminals it moves below the session list
-- Can be scrolled with the mouse, `J` & `K` or `shift+↓` & `shift+↑`
+- Can be scrolled with the mouse or the preview scroll keys in the table above
 
 ## Requirements
 
@@ -94,7 +115,7 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 
 ## TODO
 
-- [ ] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `enter` and `h/l`.
+- [x] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `space`, `<C-space>`, and `h/l`.
 - [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
   - [ ] `<C-x>` closes the currently active/running tmux window
