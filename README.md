@@ -95,6 +95,7 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 ## TODO
 
 - [ ] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `enter` and `h/l`.
+- [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
   - [ ] `<C-x>` closes the currently active/running tmux window
   - [ ] `n` creates a new session in the path of the currently selected item and let the agent name it. `N` lets the user manually name the session. If in tmux mode also attaches/creates a tmux session in that path.
