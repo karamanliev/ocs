@@ -4,20 +4,20 @@ A fast terminal UI for managing [OpenCode](https://opencode.ai) sessions.
 
 `ocs` reads your local OpenCode SQLite database directly and gives you a keyboard-driven interface to resume, attach, rename, preview, and delete sessions. No fzf, no subprocess hacks, just a single static binary.
 
-https://github.com/user-attachments/assets/04150324-edac-415e-babe-ab96d16b9b81
+https://github.com/user-attachments/assets/49dd22b3-77b5-4223-aea4-5e11f714eafa
 
 ## Features
 
-- **Pure Go** — static binary, zero runtime dependencies beyond `opencode` and optionally `tmux`
-- **Dual mode** — `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
-- **Fuzzy filtering** — type `/` to filter sessions in real time
-- **Preview pane** — visible by default, auto-moves right or below based on terminal width
-- **Grouped view** — enabled by default, can be toggled on the fly
-- **Batch delete** — multi-select and confirm delete
-- **Rename** — inline session rename
-- **Running indicator** — green dot shows which sessions have active tmux panes
-- **Auto theme** — detects light/dark terminal background on startup and live-reloads on focus change
-- **Mouse support** — scroll lists and preview pane, select rows, expand/collapse groups
+- **Pure Go** - static binary, zero runtime dependencies beyond `opencode` and optionally `tmux`
+- **Dual mode** - `ALL` mode resumes sessions in-place; `TMUX` mode attaches them to tmux windows
+- **Fuzzy filtering** - type `/` to filter sessions in real time
+- **Preview pane** - visible by default, auto-moves right or below based on terminal width
+- **Grouped view** - enabled by default, can be toggled on the fly
+- **Batch delete** - multi-select and confirm delete
+- **Rename** - inline session rename
+- **Running indicator** - green dot shows which sessions have active tmux panes
+- **Auto theme** - detects light/dark terminal background on startup and live-reloads on focus change
+- **Mouse support** - scroll lists and preview pane, select rows, expand/collapse groups
 
 ## Installation
 
@@ -68,8 +68,8 @@ ocs --theme dark  # force dark theme (light also available)
 
 ## Modes
 
-- **ALL** — the default. Pressing `enter` resumes the session directly.
-- **TMUX** — `enter` opens the session in a tmux window. The title bar shows `[tmux]` and the UI shifts to purple tones.
+- **ALL** - the default. Pressing `enter` resumes the session directly.
+- **TMUX** - `enter` opens the session in a tmux window. The title bar shows `[tmux]` and the UI shifts to purple tones.
 
 
 ## Theme
