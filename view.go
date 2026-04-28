@@ -432,41 +432,124 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 }
 
 func truncatePreviewLines(lines []string, limit int) []string {
-	if limit < 1 || len(lines) <= limit {
-		return lines
+	if limit < 1 {
+		return nil
 	}
-	lines = append([]string{}, lines[:limit]...)
-	last := lines[len(lines)-1]
+	nonEmpty := 0
+	var keep []string
+	for _, l := range lines {
+		if nonEmpty >= limit {
+			break
+		}
+		if strings.TrimSpace(l) != "" {
+			nonEmpty++
+		}
+		keep = append(keep, l)
+	}
+	if len(keep) == len(lines) {
+		return keep
+	}
+	last := keep[len(keep)-1]
 	if lipgloss.Width(last) > 3 {
 		last = truncate.StringWithTail(last, uint(lipgloss.Width(last)), "...")
 	} else {
 		last = "..."
 	}
-	lines[len(lines)-1] = last
+	keep[len(keep)-1] = last
+	return keep
+}
+
+func (m model) previewDivider(label string, contentW int, fg lipgloss.Color) string {
+	prefix := "── " + label + " "
+	dashes := contentW - len(prefix)
+	if dashes < 2 {
+		dashes = 2
+	}
+	return "  " + lipgloss.NewStyle().Foreground(fg).Render(prefix+strings.Repeat("─", dashes))
+}
+
+func (m model) previewScrollbarChar(lineIdx, viewH, scroll, maxScroll, totalLines int) string {
+	thumbH := viewH * viewH / totalLines
+	if thumbH < 1 {
+		thumbH = 1
+	}
+	thumbStart := 0
+	if maxScroll > 0 {
+		thumbStart = scroll * (viewH - thumbH) / maxScroll
+	}
+	if lineIdx >= thumbStart && lineIdx < thumbStart+thumbH {
+		return lipgloss.NewStyle().Foreground(m.theme.scrollbarThumb).Render("█")
+	}
+	return lipgloss.NewStyle().Foreground(m.theme.scrollbarTrack).Render("│")
+}
+
+func (m model) buildPreviewLines(data previewData, contentW int) []string {
+	padLeft := "  "
+	youStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg)
+	agentStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalHintFg)
+	userMsgStyle := lipgloss.NewStyle().Italic(true).Foreground(m.theme.previewContentFg)
+	agentMsgStyle := lipgloss.NewStyle().Italic(true).Foreground(m.theme.modalHintFg)
+
+	agentLabel := "Agent"
+	if data.modelName != "" {
+		agentLabel = "Agent [" + data.modelName + "]"
+	}
+
+	var lines []string
+
+	// ── First exchange ──
+	lines = append(lines, m.previewDivider("First exchange", contentW, m.theme.timeDay))
+	lines = append(lines, "")
+
+	addLines := func(text string, style lipgloss.Style) {
+		for _, l := range truncatePreviewLines(strings.Split(wrapText(text, contentW), "\n"), 8) {
+			lines = append(lines, padLeft+style.Render(l))
+		}
+	}
+
+	if data.firstUser != "" {
+		lines = append(lines, padLeft+youStyle.Render("You"))
+		addLines(data.firstUser, userMsgStyle)
+	} else {
+		lines = append(lines, padLeft+userMsgStyle.Render("(no messages)"))
+	}
+
+	if data.firstAssistant != "" {
+		lines = append(lines, "")
+		lines = append(lines, padLeft+agentStyle.Render(agentLabel))
+		addLines(data.firstAssistant, agentMsgStyle)
+	}
+
+	// ── Latest exchange ── only if different from first
+	lastUserDiff := data.lastUser != "" && data.lastUser != data.firstUser
+	lastAsstDiff := data.lastAssistant != "" && data.lastAssistant != data.firstAssistant
+	if lastUserDiff || lastAsstDiff {
+		lines = append(lines, "")
+		lines = append(lines, m.previewDivider("Latest exchange", contentW, m.theme.timeOld))
+		lines = append(lines, "")
+
+		if lastUserDiff {
+			lines = append(lines, padLeft+youStyle.Render("You"))
+			addLines(data.lastUser, userMsgStyle)
+		}
+
+		if lastAsstDiff {
+			if lastUserDiff {
+				lines = append(lines, "")
+			}
+			lines = append(lines, padLeft+agentStyle.Render(agentLabel))
+			addLines(data.lastAssistant, agentMsgStyle)
+		}
+	}
+
+	// Bottom padding so content doesn't stick to the border
+	lines = append(lines, "", "")
+
 	return lines
 }
 
 func (m model) renderPreviewPane(width int, height int) string {
 	item := m.list.SelectedItem()
-	userContent := "No session selected."
-	assistantContent := ""
-	titleText := ""
-	dirText := ""
-	if item != nil {
-		sess := item.(sessionItem).session
-		titleText = sess.Title
-		dirText = sess.Directory
-		if cached, ok := m.firstMsgs[sess.ID]; !ok {
-			userContent = "Loading..."
-		} else {
-			if cached.user == "" {
-				userContent = "No user preview available."
-			} else {
-				userContent = cached.user
-			}
-			assistantContent = cached.assistant
-		}
-	}
 
 	innerW := width - 2
 	if innerW < 10 {
@@ -476,60 +559,116 @@ func (m model) renderPreviewPane(width int, height int) string {
 	if innerH < 2 {
 		innerH = 2
 	}
-	contentW := innerW - 4
+	// Reserve 1 col for scrollbar (always, to avoid reflow when it appears)
+	contentW := innerW - 5
 	if contentW < 6 {
 		contentW = 6
 	}
 
 	padLeft := "  "
-	var lines []string
-	lines = append(lines, "")
+	var header []string
+	header = append(header, "")
 
-	if titleText != "" {
-		lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(truncate.StringWithTail(titleText, uint(contentW), "...")))
-	}
-	if dirText != "" {
-		lines = append(lines, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(truncate.StringWithTail(dirText, uint(contentW), "...")))
-		lines = append(lines, "")
-	}
+	var data previewData
+	loading := false
 
-	maxContentLines := innerH - len(lines) - 2
-	if maxContentLines < 1 {
-		maxContentLines = 1
-		if innerH > 1 && len(lines) >= innerH {
-			lines = lines[:innerH-1]
+	if item == nil {
+		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("No session selected."))
+	} else {
+		sess := item.(sessionItem).session
+		header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
+			truncate.StringWithTail(sess.Title, uint(contentW), "...")))
+		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
+			truncate.StringWithTail(sess.Directory, uint(contentW), "...")))
+		header = append(header, "")
+
+		cached, ok := m.firstMsgs[sess.ID]
+		if !ok {
+			loading = true
+		} else {
+			data = cached
 		}
 	}
 
-	lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render("You"))
-	userLines := truncatePreviewLines(strings.Split(wrapText(userContent, contentW), "\n"), 4)
-	for _, line := range userLines {
-		lines = append(lines, padLeft+lipgloss.NewStyle().Italic(true).Foreground(m.theme.previewContentFg).Render(line))
+	var bodyLines []string
+	if loading {
+		bodyLines = append(bodyLines, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Loading..."))
+	} else if item != nil {
+		bodyLines = m.buildPreviewLines(data, contentW)
 	}
 
-	if assistantContent != "" && len(lines) < innerH-1 {
-		lines = append(lines, "")
-		lines = append(lines, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalHintFg).Render("Agent"))
-		assistantLines := truncatePreviewLines(strings.Split(wrapText(assistantContent, contentW), "\n"), 5)
-		free := innerH - len(lines)
-		if free > 0 && len(assistantLines) > free {
-			assistantLines = truncatePreviewLines(assistantLines, free)
+	allLines := append(header, bodyLines...)
+
+	// Scroll logic
+	totalLines := len(allLines)
+	canScroll := totalLines > innerH
+	maxScroll := 0
+	if canScroll {
+		maxScroll = totalLines - innerH
+	}
+	scroll := m.previewScroll
+	if scroll < 0 {
+		scroll = 0
+	}
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	// Pad to at least innerH
+	for len(allLines) < innerH {
+		allLines = append(allLines, "")
+	}
+
+	visible := allLines[scroll:]
+	if len(visible) > innerH {
+		visible = visible[:innerH]
+	}
+
+	// Render each line with scrollbar in the last column
+	sbColW := innerW - 1
+	rendered := make([]string, len(visible))
+	for i, line := range visible {
+		vis := lipgloss.Width(line)
+		if vis < sbColW {
+			line += strings.Repeat(" ", sbColW-vis)
 		}
-		for _, line := range assistantLines {
-			lines = append(lines, padLeft+lipgloss.NewStyle().Italic(true).Foreground(m.theme.modalHintFg).Render(line))
+		var sb string
+		if canScroll {
+			sb = m.previewScrollbarChar(i, innerH, scroll, maxScroll, totalLines)
+		} else {
+			sb = " "
 		}
+		rendered[i] = line + sb
 	}
 
-	for len(lines) < innerH {
-		lines = append(lines, "")
-	}
-	if len(lines) > innerH {
-		lines = lines[:innerH]
+	rightTitle := "<Tab> toggle"
+	if canScroll {
+		rightTitle = "<Tab> toggle · <J/K> scroll"
 	}
 
-	contentView := strings.Join(lines, "\n")
+	return m.renderPanel(strings.Join(rendered, "\n"), width, height,
+		"Preview", rightTitle, m.theme.previewBorder, m.theme.modalHintFg, m.theme.previewBg)
+}
 
-	return m.renderPanel(contentView, width, height, "Preview", "<Tab> Toggle", m.theme.previewBorder, m.theme.modalHintFg, m.theme.previewBg)
+// inPreviewBody reports whether the terminal cell (x,y) is inside the preview
+// pane's inner content area (i.e. not on the border).
+func (m model) inPreviewBody(x, y int) bool {
+	if !m.showPreview {
+		return false
+	}
+	layout := m.layoutMetrics()
+	if !layout.showPreview {
+		return false
+	}
+	if layout.previewSide {
+		left := layout.listWidth + 1 + 1 // gap + left border
+		right := layout.listWidth + 1 + layout.previewW - 1
+		return x >= left && x < right && y >= 1 && y < layout.previewH-1
+	}
+	// Bottom layout: listBox has listHeight+3 rows (top border + header + listHeight + bottom border)
+	previewTop := layout.listHeight + 3 + 1 // 1 for "\n" separator + top border
+	return x >= 1 && x < layout.previewW-1 &&
+		y >= previewTop && y < previewTop+layout.previewH-1
 }
 
 func (m model) renderDeleteBox() string {

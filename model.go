@@ -37,10 +37,12 @@ type model struct {
 	theme       theme
 	renameID    string
 	renameInput textinput.Model
-	lastClickAt time.Time
-	lastClickIx int
-	deleting    bool
-	spinner     spinner.Model
+	lastClickAt   time.Time
+	lastClickIx   int
+	deleting      bool
+	spinner       spinner.Model
+	previewScroll    int
+	previewScrollMax int
 }
 
 type deleteDoneMsg struct{}
@@ -263,7 +265,44 @@ func (m *model) cancelRename() {
 	m.renameInput.SetValue("")
 }
 
+func (m *model) updatePreviewScrollMax() {
+	layout := m.layoutMetrics()
+	if !layout.showPreview {
+		m.previewScrollMax = 0
+		return
+	}
+	innerH := layout.previewH - 2
+	if innerH < 1 {
+		m.previewScrollMax = 0
+		return
+	}
+	item := m.list.SelectedItem()
+	if item == nil {
+		m.previewScrollMax = 0
+		return
+	}
+	cached, ok := m.firstMsgs[item.(sessionItem).session.ID]
+	if !ok {
+		m.previewScrollMax = 0
+		return
+	}
+	contentW := (layout.previewW - 2) - 5
+	if contentW < 6 {
+		contentW = 6
+	}
+	// header: "" + title + dir + ""
+	total := 4 + len(m.buildPreviewLines(cached, contentW))
+	max := total - innerH
+	if max < 0 {
+		max = 0
+	}
+	m.previewScrollMax = max
+}
+
 func (m *model) afterMove() (tea.Model, tea.Cmd) {
+	m.previewScroll = 0
+	m.previewScrollMax = 0
+	m.updatePreviewScrollMax() // instant if data already cached
 	return m, needsPreview(*m)
 }
 

@@ -20,8 +20,11 @@ type Session struct {
 }
 
 type previewData struct {
-	user      string
-	assistant string
+	firstUser      string
+	firstAssistant string
+	lastUser       string
+	lastAssistant  string
+	modelName      string
 }
 
 func getDBPath() string {
@@ -195,32 +198,43 @@ func timeNowMs() int64 {
 	return time.Now().UnixMilli()
 }
 
-func getFirstMessageByRole(dbPath, sessionID, role string) string {
+func getPreviewData(dbPath, sessionID string) previewData {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return ""
+		return previewData{}
 	}
 	defer db.Close()
 
-	var text string
-	err = db.QueryRow(`
-		SELECT json_extract(p.data, '$.text') FROM part p
-		JOIN message m ON m.id = p.message_id
-		WHERE m.session_id = ?
-		  AND json_extract(m.data, '$.role') = ?
-		  AND json_extract(p.data, '$.type') = 'text'
-		ORDER BY m.time_created ASC, p.time_created ASC
-		LIMIT 1
-	`, sessionID, role).Scan(&text)
-	if err != nil {
-		return ""
+	queryText := func(role, order string) string {
+		var text string
+		_ = db.QueryRow(fmt.Sprintf(`
+			SELECT json_extract(p.data, '$.text') FROM part p
+			JOIN message m ON m.id = p.message_id
+			WHERE m.session_id = ?
+			  AND json_extract(m.data, '$.role') = ?
+			  AND json_extract(p.data, '$.type') = 'text'
+			ORDER BY m.time_created %s, p.time_created %s
+			LIMIT 1
+		`, order, order), sessionID, role).Scan(&text)
+		return text
 	}
-	return text
-}
 
-func getPreviewData(dbPath, sessionID string) previewData {
+	var modelName string
+	_ = db.QueryRow(`
+		SELECT json_extract(data, '$.modelID')
+		FROM message
+		WHERE session_id = ?
+		  AND json_extract(data, '$.role') = 'assistant'
+		  AND json_extract(data, '$.modelID') IS NOT NULL
+		ORDER BY time_created DESC
+		LIMIT 1
+	`, sessionID).Scan(&modelName)
+
 	return previewData{
-		user:      getFirstMessageByRole(dbPath, sessionID, "user"),
-		assistant: getFirstMessageByRole(dbPath, sessionID, "assistant"),
+		firstUser:      queryText("user", "ASC"),
+		firstAssistant: queryText("assistant", "ASC"),
+		lastUser:       queryText("user", "DESC"),
+		lastAssistant:  queryText("assistant", "DESC"),
+		modelName:      modelName,
 	}
 }

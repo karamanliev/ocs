@@ -37,6 +37,8 @@ type theme struct {
 	footerLabel      lipgloss.Color
 	titleAllFg       lipgloss.Color
 	titleTmuxFg      lipgloss.Color
+	scrollbarThumb   lipgloss.Color
+	scrollbarTrack   lipgloss.Color
 }
 
 var darkTheme = theme{
@@ -69,6 +71,8 @@ var darkTheme = theme{
 	footerLabel:      lipgloss.Color("#6B7280"),
 	titleAllFg:       lipgloss.Color("#6B8DB5"),
 	titleTmuxFg:      lipgloss.Color("#8B7DB0"),
+	scrollbarThumb:   lipgloss.Color("#4ECDC4"),
+	scrollbarTrack:   lipgloss.Color("#2D3748"),
 }
 
 var lightTheme = theme{
@@ -101,6 +105,8 @@ var lightTheme = theme{
 	footerLabel:      lipgloss.Color("#9CA3AF"),
 	titleAllFg:       lipgloss.Color("#5B7D9F"),
 	titleTmuxFg:      lipgloss.Color("#7B6D9F"),
+	scrollbarThumb:   lipgloss.Color("#0891B2"),
+	scrollbarTrack:   lipgloss.Color("#E5E7EB"),
 }
 
 var themeForDark = map[bool]theme{
@@ -159,3 +165,4 @@ func (t theme) filterStyles() (prompt, cursor lipgloss.Style) {
 	base := lipgloss.NewStyle().Foreground(t.filterPrompt)
 	return base, base
 }
+

@@ -14,10 +14,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resize()
+		m.updatePreviewScrollMax()
 		return m, nil
 
 	case previewMsg:
 		m.firstMsgs[msg.id] = msg.data
+		m.updatePreviewScrollMax()
 		return m, nil
 
 	case deleteDoneMsg:
@@ -139,6 +141,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "shift+down", "J":
+			if m.showPreview && m.previewScroll < m.previewScrollMax {
+				m.previewScroll += 18
+				if m.previewScroll > m.previewScrollMax {
+					m.previewScroll = m.previewScrollMax
+				}
+				return m, nil
+			}
+		case "shift+up", "K":
+			if m.showPreview && m.previewScroll > 0 {
+				m.previewScroll -= 18
+				if m.previewScroll < 0 {
+					m.previewScroll = 0
+				}
+				return m, nil
+			}
 		case "tab":
 			m.showPreview = !m.showPreview
 			m.resize()
@@ -198,6 +216,9 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	newID, hasNew := currentSessionID(m)
 	if hasNew && newID != oldID {
+		m.previewScroll = 0
+		m.previewScrollMax = 0
+		m.updatePreviewScrollMax()
 		cmd = tea.Batch(cmd, needsPreview(m))
 	}
 
@@ -206,6 +227,23 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.renameID != "" || m.confirmingDelete() || m.deleting {
+		return m, nil
+	}
+
+	// Wheel over preview pane scrolls preview content
+	if m.inPreviewBody(msg.X, msg.Y) {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if m.previewScroll > 0 {
+				m.previewScroll--
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			if m.previewScroll < m.previewScrollMax {
+				m.previewScroll++
+			}
+			return m, nil
+		}
 		return m, nil
 	}
 

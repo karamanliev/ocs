@@ -60,7 +60,7 @@ ocs -no-preview  # launch with preview pane hidden
 - Press `tab` to toggle it on or off
 - On wider terminals it appears to the right of the session list
 - On narrower terminals it moves below the session list
-- The pane header shows `Preview` on the left and `<Tab> Toggle` on the right
+- Can be scrolled with the mouse, `J` & `K` or `shift+↓` & `shift+↑`
 
 ## Requirements
 
@@ -71,10 +71,10 @@ ocs -no-preview  # launch with preview pane hidden
 ## TODO
 
 - [ ] Add `<C-g>` and `-grouped` flag which toggles grouping by path
+- [ ] Add `--theme` flag to target light or dark theme
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
-- [ ] Rework CLI flags
 - [ ] Add configurable keybinds
-- [ ] Add `-popup` flag which opens the TUI in a tmux popup
+- [ ] Rework CLI flags
 
 ## License
 
