@@ -68,6 +68,14 @@ ocs -no-preview  # launch with preview pane hidden
 - `tmux` is optional; without it `ocs` works in ALL mode only
 - SQLite database is read from `$XDG_DATA_HOME/opencode/opencode.db`
 
+## TODO
+
+- [ ] Add `<C-g>` and `-grouped` flag which toggles grouping by path
+- [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
+- [ ] Rework CLI flags
+- [ ] Add configurable keybinds
+- [ ] Add `-popup` flag which opens the TUI in a tmux popup
+
 ## License
 
 MIT
