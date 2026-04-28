@@ -94,11 +94,15 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 
 ## TODO
 
-- [ ] Add `<C-g>` and `--grouped` flag which toggles grouping by path
-- [x] Add `--theme` flag to target light or dark theme
+- [ ] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `enter` and `h/l`.
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
-- [ ] Add configurable keybinds
-- [ ] Rework CLI flags
+  - [ ] `<C-x>` closes the currently active/running tmux window
+  - [ ] `n` creates a new session in the path of the currently selected item and let the agent name it. `N` lets the user manually name the session. If in tmux mode also attaches/creates a tmux session in that path.
+  - [ ] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
+- [ ] Add configurable keybinds, maybe a toml/json config file in `~/.config/ocs/config.{toml,json}`
+- [ ] Rework CLI flags (add more options, add `true/false` to already existing flags, etc)
+- [ ] Add sorting by different criteria to the session list
+- [x] Add `--theme` flag to target `light` or `dark` theme
 
 ## License
 
