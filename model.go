@@ -32,6 +32,7 @@ type model struct {
 	height      int
 	actionID    string
 	actionDir   string
+	actionTitle string
 	actionTmux  bool
 	theme       theme
 	renameID    string
@@ -214,6 +215,7 @@ func (m model) setAction(useTmux bool) (tea.Model, tea.Cmd) {
 	sess := item.(sessionItem).session
 	m.actionID = sess.ID
 	m.actionDir = sess.Directory
+	m.actionTitle = sess.Title
 	m.actionTmux = useTmux
 	return m, tea.Quit
 }

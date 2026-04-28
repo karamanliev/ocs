@@ -109,7 +109,15 @@ func attachTmux(tmuxPath, sessionName string) {
 	}
 }
 
-func ctrlTmux(agentPath, id, dir string) {
+func tmuxWindowName(title string) string {
+	const max = 10
+	if len(title) > max {
+		title = strings.TrimRight(title[:max], " \t") + "..."
+	}
+	return title
+}
+
+func ctrlTmux(agentPath, id, dir, title string) {
 	tmuxPath, err := exec.LookPath("tmux")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Error: tmux not found in PATH")
@@ -152,7 +160,7 @@ func ctrlTmux(agentPath, id, dir string) {
 		}
 	}
 	winTarget := fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
-	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-c", dir, "--", agentPath, "-s", id)
+	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-n", tmuxWindowName(title), "-c", dir, "--", agentPath, "-s", id)
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
