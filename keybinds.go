@@ -17,6 +17,8 @@ const (
 	stateConfirmingNewSession
 	stateConfirmingFork
 	stateForking
+	stateConfirmingCloseTmux
+	stateClosingTmux
 )
 
 func (m model) appState() appState {
@@ -25,6 +27,8 @@ func (m model) appState() appState {
 		return stateRenaming
 	case m.dirpickerOpen:
 		return stateFilepicker
+	case m.closingTmux:
+		return stateClosingTmux
 	case m.forking:
 		return stateForking
 	case m.deleting:
@@ -35,6 +39,8 @@ func (m model) appState() appState {
 		return stateConfirmingFork
 	case m.confirmingNewSession:
 		return stateConfirmingNewSession
+	case m.confirmingCloseTmux:
+		return stateConfirmingCloseTmux
 	default:
 		return stateNormal
 	}
@@ -48,12 +54,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDirpickerKeys(msg)
 	case stateConfirmingDelete:
 		return m.handleConfirmDeleteKeys(msg)
-	case stateDeleting, stateForking:
+	case stateDeleting, stateForking, stateClosingTmux:
 		return m, nil
 	case stateConfirmingNewSession:
 		return m.handleConfirmNewSessionKeys(msg)
 	case stateConfirmingFork:
 		return m.handleConfirmForkKeys(msg)
+	case stateConfirmingCloseTmux:
+		return m.handleConfirmCloseTmuxKeys(msg)
 	default:
 		return m.handleNormalKeys(msg)
 	}
@@ -142,6 +150,24 @@ func (m model) handleConfirmForkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingForkID = ""
 		m.pendingForkTitle = ""
 		m.pendingForkDir = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) handleConfirmCloseTmuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.confirmingCloseTmux = false
+		m.closingTmux = true
+		return m, tea.Batch(
+			m.spinner.Tick,
+			doCloseTmuxCmd(m.dbPath, m.closeTmuxSessionID, m.closeTmuxTitle),
+		)
+	case "n", "N", "esc", "q":
+		m.confirmingCloseTmux = false
+		m.closeTmuxSessionID = ""
+		m.closeTmuxTitle = ""
 		return m, nil
 	}
 	return m, nil
@@ -361,6 +387,11 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "Y":
 			m.startFork()
 			return m, nil
+		case "x":
+			if m.hasTmux && m.mode == "tmux" {
+				return m.handleCloseTmuxKey()
+			}
+			return m, nil
 		}
 	}
 
@@ -426,5 +457,24 @@ func (m model) handleForkKey() (tea.Model, tea.Cmd) {
 	m.pendingForkID = sess.ID
 	m.pendingForkTitle = sess.Title
 	m.pendingForkDir = sess.Directory
+	return m, nil
+}
+
+func (m model) handleCloseTmuxKey() (tea.Model, tea.Cmd) {
+	item := m.list.SelectedItem()
+	if item == nil {
+		return m, nil
+	}
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		return m, nil
+	}
+	st := m.states[sess.ID]
+	if st < stateActive {
+		return m, nil
+	}
+	m.confirmingCloseTmux = true
+	m.closeTmuxSessionID = sess.ID
+	m.closeTmuxTitle = sess.Title
 	return m, nil
 }

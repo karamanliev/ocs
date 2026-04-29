@@ -116,6 +116,10 @@ func attachTmux(tmuxPath, sessionName string) {
 	}
 }
 
+func killTmuxWindow(tmuxPath, sessionName, winIdx string) error {
+	return exec.Command(tmuxPath, "kill-window", "-t", sessionName+":"+winIdx).Run()
+}
+
 func tmuxWindowName(title string) string {
 	const max = 10
 	if len(title) > max {

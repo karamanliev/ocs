@@ -45,7 +45,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case spinner.TickMsg:
-		if m.deleting || m.forking {
+		if m.deleting || m.forking || m.closingTmux {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -65,6 +65,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.actionTitle = msg.title
 		m.actionTmux = msg.tmux
 		return m, tea.Quit
+
+	case closeTmuxDoneMsg:
+		m.closingTmux = false
+		m.closeTmuxSessionID = ""
+		m.closeTmuxTitle = ""
+		m.states = getSessionStates(m.sessions)
+		cmd := m.rebuildItems()
+		return m, cmd
 
 	case tea.FocusMsg:
 		return m, func() tea.Msg {

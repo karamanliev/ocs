@@ -42,6 +42,8 @@ func (m model) View() string {
 
 	if m.forking {
 		out = m.renderOverlay(out, m.renderForkingBox(), m.theme.modalBg, true)
+	} else if m.closingTmux {
+		out = m.renderOverlay(out, m.renderClosingTmuxBox(), m.theme.modalBg, true)
 	} else if m.deleting {
 		out = m.renderOverlay(out, m.renderDeletingBox(), m.theme.modalBg, true)
 	} else if m.confirmingDelete() {
@@ -50,6 +52,8 @@ func (m model) View() string {
 		out = m.renderOverlay(out, m.renderConfirmForkBox(), m.theme.modalBg, true)
 	} else if m.confirmingNewSession {
 		out = m.renderOverlay(out, m.renderConfirmNewSessionBox(), m.theme.modalBg, true)
+	} else if m.confirmingCloseTmux {
+		out = m.renderOverlay(out, m.renderConfirmCloseTmuxBox(), m.theme.modalBg, true)
 	}
 
 	if m.renameID != "" || m.forkMode {
@@ -240,6 +244,9 @@ func (m model) renderFooter() string {
 		parts = append(parts, sepStyle.Render(" · ")+build("r", " rename"))
 		parts = append(parts, sepStyle.Render(" · ")+build("y", " fork"))
 		parts = append(parts, sepStyle.Render(" · ")+build("Y", " fork name"))
+		if m.hasTmux && m.mode == "tmux" {
+			parts = append(parts, sepStyle.Render(" · ")+build("x", " close"))
+		}
 		parts = append(parts, sepStyle.Render(" · ")+build("d", " delete"))
 		left = strings.Join(parts, "")
 	}
@@ -816,6 +823,47 @@ func (m model) renderForkingBox() string {
 	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, "")
+}
+
+func (m model) renderConfirmCloseTmuxBox() string {
+	prompt := "Close tmux window?"
+	if m.closeTmuxTitle != "" {
+		prompt = fmt.Sprintf("Close tmux window for \"%s\"?", m.closeTmuxTitle)
+	}
+
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	body := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalPromptFg).
+		Width(width).
+		Align(lipgloss.Left).
+		Render(wrapText(prompt, width))
+
+	hint := "y confirm, n cancel"
+	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, hint)
+}
+
+func (m model) renderClosingTmuxBox() string {
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	spin := m.spinner.View()
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Closing window..."))
+	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+
+	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, "")
 }
 
 func (m model) renderRenameBox() string {

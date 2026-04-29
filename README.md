@@ -67,6 +67,7 @@ ocs --theme dark    # force dark theme (light also available)
 | `N` | Open directory picker to choose directory for new session |
 | `y` | Duplicate selected session with `!DUP` prefix (confirmation modal) |
 | `Y` | Duplicate selected session with a custom title (rename modal) |
+| `x` | Close running tmux window for selected session (tmux mode only, confirmation modal) |
 | `tab` | Toggle preview pane |
 | `J`, `K`, `shift+up`, `shift+down` | Scroll preview |
 | Mouse wheel | Scroll preview or list |
@@ -122,15 +123,16 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 ## TODO
 
 - [x] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `space`, `<C-space>`, and `h/l`.
-- [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
-- [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
+- [x] Add `--theme` flag to target `light` or `dark` theme
+- [x] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
+  - [x] `x` closes the window of the currently running/active tmux session. Refreshes the list to update the indicator. Works only in tmux mode.
   - [x] `n` creates a new session in the path of the currently selected item/group and let the agent name it. `N` lets the user choose the filepath of the session. If in tmux mode also attaches/creates a tmux session in that path.
-  - [ ] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
+  - [x] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
+- [ ] Add a popup with the keybinds, list only the most commonly used ones in the footer
 - [ ] Add configurable keybinds, maybe a toml/json config file in `~/.config/ocs/config.{toml,json}`
 - [ ] Rework CLI flags (add more options, add `true/false` to already existing flags, etc)
 - [ ] Add sorting by different criteria to the session list
-- [ ] Add a popup with the keybinds, list only the most commonly used ones in the footer
-- [x] Add `--theme` flag to target `light` or `dark` theme
+- [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
 
 ## License
 

@@ -50,6 +50,10 @@ type model struct {
 	pendingForkTitle string
 	pendingForkDir   string
 	forking          bool
+	confirmingCloseTmux bool
+	closingTmux      bool
+	closeTmuxSessionID string
+	closeTmuxTitle   string
 	lastClickAt      time.Time
 	lastClickIx      int
 	deleting         bool
@@ -90,6 +94,26 @@ func doForkCmd(dbPath, sessionID, title, dir string, useTmux bool) tea.Cmd {
 			tmux:  useTmux,
 			err:   err,
 		}
+	}
+}
+
+type closeTmuxDoneMsg struct {
+	id   string
+	err  error
+}
+
+func doCloseTmuxCmd(dbPath, sessionID, title string) tea.Cmd {
+	return func() tea.Msg {
+		tmuxPath, err := exec.LookPath("tmux")
+		if err != nil {
+			return closeTmuxDoneMsg{id: sessionID, err: err}
+		}
+		sessName, winIdx, found := findTmuxWindow(tmuxPath, sessionID)
+		if !found {
+			return closeTmuxDoneMsg{id: sessionID, err: fmt.Errorf("tmux window not found")}
+		}
+		err = killTmuxWindow(tmuxPath, sessName, winIdx)
+		return closeTmuxDoneMsg{id: sessionID, err: err}
 	}
 }
 
@@ -357,6 +381,10 @@ func (m *model) cancelRename() {
 	m.pendingForkTitle = ""
 	m.pendingForkDir = ""
 	m.forking = false
+	m.confirmingCloseTmux = false
+	m.closingTmux = false
+	m.closeTmuxSessionID = ""
+	m.closeTmuxTitle = ""
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
 }
