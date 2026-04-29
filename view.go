@@ -737,9 +737,9 @@ func (m model) renderDeleteBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
-		Width(width).
+		Width(width - 6).
 		Align(lipgloss.Left).
-		Render(wrapText(prompt, width))
+		Render(wrapText(prompt, width-6))
 
 	hint := m.buildHint([]hintPart{
 		{"y", " confirm"},
@@ -759,7 +759,7 @@ func (m model) renderDeletingBox() string {
 
 	spin := m.spinner.View()
 	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Deleting..."))
-	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, "")
 }
@@ -781,9 +781,9 @@ func (m model) renderConfirmNewSessionBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
-		Width(width).
+		Width(width - 6).
 		Align(lipgloss.Left).
-		Render(wrapText(prompt, width))
+		Render(wrapText(prompt, width-6))
 
 	hint := m.buildHint([]hintPart{
 		{"y", " confirm"},
@@ -809,9 +809,9 @@ func (m model) renderConfirmForkBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
-		Width(width).
+		Width(width - 6).
 		Align(lipgloss.Left).
-		Render(wrapText(prompt, width))
+		Render(wrapText(prompt, width-6))
 
 	hint := m.buildHint([]hintPart{
 		{"y", " confirm"},
@@ -831,7 +831,7 @@ func (m model) renderForkingBox() string {
 
 	spin := m.spinner.View()
 	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Duplicating..."))
-	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, "")
 }
@@ -853,9 +853,9 @@ func (m model) renderConfirmCloseTmuxBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
-		Width(width).
+		Width(width - 6).
 		Align(lipgloss.Left).
-		Render(wrapText(prompt, width))
+		Render(wrapText(prompt, width-6))
 
 	hint := m.buildHint([]hintPart{
 		{"y", " confirm"},
@@ -875,7 +875,7 @@ func (m model) renderClosingTmuxBox() string {
 
 	spin := m.spinner.View()
 	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Closing window..."))
-	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, "")
 }
