@@ -17,9 +17,16 @@ func deleteSession(cmd, id string) {
 
 func resumeSession(cmd, id, dir string) {
 	c := exec.Command(cmd, "-s", id)
-	if dir != "" {
-		c.Dir = dir
-	}
+	c.Dir = dir
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	_ = c.Run()
+}
+
+func newSessionInDir(cmd, dir string) {
+	c := exec.Command(cmd)
+	c.Dir = dir
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -171,6 +178,51 @@ func ctrlTmux(agentPath, id, dir, title string) {
 	paneOut, _ := exec.Command(tmuxPath, "list-panes", "-t", winTarget, "-F", "#{pane_id}").Output()
 	if paneID := strings.TrimSpace(string(paneOut)); paneID != "" {
 		_ = exec.Command(tmuxPath, "set-option", "-p", "-t", paneID, "@ocs_session_id", id).Run()
+	}
+
+	attachTmux(tmuxPath, sessionName)
+}
+
+func ctrlTmuxNew(agentPath, dir string) {
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: tmux not found in PATH")
+		return
+	}
+
+	sessionName := filepath.Base(dir)
+	if sessionName == "" || sessionName == "." || sessionName == "/" {
+		sessionName = "default"
+	}
+	sessionName = strings.ReplaceAll(sessionName, "/", "-")
+	sessionName = strings.ReplaceAll(sessionName, "\\", "-")
+
+	if exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() != nil {
+		c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+			return
+		}
+	}
+
+	out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
+	maxIdx := -1
+	for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
+			maxIdx = n
+		}
+	}
+	winTarget := fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
+	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-n", "opencode", "-c", dir, "--", agentPath)
+	c.Stderr = os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating tmux window: %v\n", err)
+		return
 	}
 
 	attachTmux(tmuxPath, sessionName)

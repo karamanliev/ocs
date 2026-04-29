@@ -96,7 +96,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	if fm.actionID != "" {
+	if fm.actionNewSession {
+		if fm.actionTmux {
+			ctrlTmuxNew(fm.agentPath, fm.actionDir)
+		} else {
+			newSessionInDir(fm.agentPath, fm.actionDir)
+		}
+	} else if fm.actionID != "" {
 		if fm.actionTmux {
 			ctrlTmux(fm.agentPath, fm.actionID, fm.actionDir, fm.actionTitle)
 		} else {

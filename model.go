@@ -36,6 +36,7 @@ type model struct {
 	actionDir        string
 	actionTitle      string
 	actionTmux       bool
+	actionNewSession bool
 	theme            theme
 	renameID         string
 	renameInput      textinput.Model
@@ -46,6 +47,8 @@ type model struct {
 	previewScroll    int
 	previewScrollMax int
 	pendingSelectRef *itemRef
+	dirpicker        dirpicker
+	dirpickerOpen    bool
 }
 
 type deleteDoneMsg struct{}
@@ -161,6 +164,8 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(theme.filterPrompt)
 
+	dp := newDirpicker("")
+
 	return &model{
 		list:        l,
 		delegate:    delegate,
@@ -180,6 +185,7 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 		renameInput: ti,
 		lastClickIx: -1,
 		spinner:     s,
+		dirpicker:   dp,
 	}, nil
 }
 

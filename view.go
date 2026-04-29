@@ -50,6 +50,10 @@ func (m model) View() string {
 		out = m.renderOverlay(out, m.renderRenameBox(), m.theme.modalBg, true)
 	}
 
+	if m.dirpickerOpen {
+		out = m.renderOverlay(out, m.renderDirpickerModal(), m.theme.modalBg, true)
+	}
+
 	return out
 }
 
@@ -225,6 +229,8 @@ func (m model) renderFooter() string {
 			parts = append(parts, sepStyle.Render(" · ")+build("space", " fold"))
 			parts = append(parts, sepStyle.Render(" · ")+build("<C-space>", " all"))
 		}
+		parts = append(parts, sepStyle.Render(" · ")+build("n", " new"))
+		parts = append(parts, sepStyle.Render(" · ")+build("N", " new dir"))
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-r>", " rename"))
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-d>", " delete"))
 		left = strings.Join(parts, "")
@@ -423,7 +429,6 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 
 	hintView := lipgloss.NewStyle().
 		Foreground(m.theme.modalHintFg).
-		Width(width).
 		Render(hint)
 
 	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
@@ -780,6 +785,56 @@ func (m model) renderRenameBox() string {
 	body += "\n\n" + field
 
 	return m.renderModalBox(boxWidth, m.theme.accent, "Rename", m.theme.accent, body, "enter save, esc cancel")
+}
+
+func (m model) renderDirpickerModal() string {
+	width := m.dirpickerWidth()
+	dpHeight := m.dirpickerHeight()
+
+	dpView := m.dirpicker.View(m.theme, width, dpHeight)
+	body := lipgloss.NewStyle().
+		Width(width).
+		Render(dpView)
+
+	keyStyle := lipgloss.NewStyle().Foreground(m.theme.accent).Background(m.theme.modalBg)
+	labelStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
+	sepStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
+
+	build := func(key, label string) string {
+		return keyStyle.Render(key) + labelStyle.Render(label)
+	}
+
+	parts := []string{
+		build("<CR>", " confirm"),
+		sepStyle.Render(" · ") + build("/", " filter"),
+		sepStyle.Render(" · ") + build("esc", " clear/close"),
+		sepStyle.Render(" · ") + build(".", " hidden"),
+	}
+	hint := strings.Join(parts, "")
+
+	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
+}
+
+func (m model) dirpickerHeight() int {
+	h := m.height * 4 / 5
+	if h < 12 {
+		h = 12
+	}
+	if h > 26 {
+		h = 26
+	}
+	return h
+}
+
+func (m model) dirpickerWidth() int {
+	w := m.width * 3 / 5
+	if w < 44 {
+		w = 44
+	}
+	if w > 80 {
+		w = 80
+	}
+	return w
 }
 
 func wrapText(s string, width int) string {

@@ -63,6 +63,8 @@ ocs --theme dark    # force dark theme (light also available)
 | `[` / `]` | Jump to previous or next group |
 | `ctrl+d` | Enter delete mode |
 | `ctrl+r` | Rename selected session |
+| `n` | Create new session in selected item's directory |
+| `N` | Open filepicker to choose directory for new session |
 | `tab` | Toggle preview pane |
 | `J`, `K`, `shift+up`, `shift+down` | Scroll preview |
 | Mouse wheel | Scroll preview or list |
@@ -120,8 +122,7 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
 - [x] Add `<C-g>` and `--grouped` flag which toggles grouping by path. Groups can be expanded/collapsed with `space`, `<C-space>`, and `h/l`.
 - [ ] Add more agents like `claude code`, `codex`, `gemini-cli`, `pi`. Maybe rename the project.
 - [ ] More tmux controls - close windows, create new opencode sessions, duplicate (fork) sessions from the TUI
-  - [ ] `<C-x>` closes the currently active/running tmux window
-  - [ ] `n` creates a new session in the path of the currently selected item/group and let the agent name it. `N` lets the user choose the filepath of the session. If in tmux mode also attaches/creates a tmux session in that path.
+  - [x] `n` creates a new session in the path of the currently selected item/group and let the agent name it. `N` lets the user choose the filepath of the session. If in tmux mode also attaches/creates a tmux session in that path.
   - [ ] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
 - [ ] Add configurable keybinds, maybe a toml/json config file in `~/.config/ocs/config.{toml,json}`
 - [ ] Rework CLI flags (add more options, add `true/false` to already existing flags, etc)

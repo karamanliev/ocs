@@ -16,6 +16,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updatePreviewScrollMax()
 		return m, nil
 
+	case dirpickerRefreshMsg:
+		m.dirpicker.allEntries = msg.entries
+		m.dirpicker.setListHeight(m.dirpickerHeight())
+		m.dirpicker.applyFilter()
+		return m, nil
+
 	case previewMsg:
 		m.firstMsgs[msg.id] = msg.data
 		m.updatePreviewScrollMax()
@@ -70,196 +76,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.passToList(msg)
 }
 
-func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.renameID != "" {
-		switch msg.String() {
-		case "esc":
-			m.cancelRename()
-			return m, nil
-		case "enter":
-			cmd := m.finishRename()
-			return m, cmd
-		}
-		var cmd tea.Cmd
-		m.renameInput, cmd = m.renameInput.Update(msg)
-		return m, cmd
-	}
-
-	if m.deleting {
-		return m, nil
-	}
-
-	if m.confirmingDelete() {
-		switch msg.String() {
-		case "y", "Y":
-			m.deleting = true
-			var ids []string
-			for id := range m.selected {
-				ids = append(ids, id)
-			}
-			if len(ids) == 0 {
-				if item := m.list.SelectedItem(); item != nil {
-					if sess, ok := sessionFromItem(item); ok {
-						ids = append(ids, sess.ID)
-					}
-				}
-			}
-			if len(ids) == 0 {
-				m.deleting = false
-				m.confirming = false
-				return m, nil
-			}
-			return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
-		case "n", "N", "esc", "q":
-			m.confirming = false
-			return m, nil
-		}
-		return m, nil
-	}
-
-	isFiltering := m.list.SettingFilter()
-
-	if m.deleteMode && !isFiltering {
-		switch msg.String() {
-		case "esc":
-			m.deleteMode = false
-			m.selected = make(map[string]struct{})
-			cmd := m.rebuildItems()
-			return m, cmd
-		case " ":
-			if item := m.list.SelectedItem(); item != nil {
-				sess, ok := sessionFromItem(item)
-				if !ok {
-					return m, nil
-				}
-				id := sess.ID
-				if _, ok := m.selected[id]; ok {
-					delete(m.selected, id)
-				} else {
-					m.selected[id] = struct{}{}
-				}
-				cmd := m.rebuildItems()
-				return m, cmd
-			}
-			return m, nil
-		case "enter", "ctrl+d":
-			if len(m.selected) == 0 {
-				if _, ok := currentSessionID(m); !ok {
-					return m, nil
-				}
-			}
-			m.confirming = true
-			return m, nil
-		}
-	}
-
-	if !isFiltering {
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "shift+down", "J":
-			if m.showPreview && m.previewScroll < m.previewScrollMax {
-				m.previewScroll += 18
-				if m.previewScroll > m.previewScrollMax {
-					m.previewScroll = m.previewScrollMax
-				}
-				return m, nil
-			}
-		case "shift+up", "K":
-			if m.showPreview && m.previewScroll > 0 {
-				m.previewScroll -= 18
-				if m.previewScroll < 0 {
-					m.previewScroll = 0
-				}
-				return m, nil
-			}
-		case "tab":
-			m.showPreview = !m.showPreview
-			m.resize()
-			return m, needsPreview(m)
-		case "ctrl+g":
-			m.grouped = !m.grouped
-			if len(m.groups) == 0 {
-				m.syncGroups()
-			}
-			cmd := m.rebuildItems()
-			return m, tea.Batch(cmd, needsPreview(m))
-		case "ctrl+d":
-			m.deleteMode = true
-			cmd := m.rebuildItems()
-			return m, cmd
-		case "ctrl+space", "ctrl+@":
-			if m.grouped {
-				cmd := m.toggleAllGroups()
-				return m, tea.Batch(cmd, needsPreview(m))
-			}
-			return m, nil
-		case "ctrl+t":
-			if m.hasTmux {
-				m.mode = toggleMode(m)
-				m.delegate.mode = m.mode
-				cmd := m.rebuildItems()
-				return m, tea.Batch(cmd, needsPreview(m))
-			}
-			return m, nil
-		case "ctrl+r":
-			m.startRename()
-			return m, nil
-		case "[":
-			if m.grouped {
-				return m.jumpGroup(-1)
-			}
-		case "]":
-			if m.grouped {
-				return m.jumpGroup(1)
-			}
-		case "h":
-			if m.grouped {
-				cmd := m.setCurrentGroupCollapsed(true)
-				return m, tea.Batch(cmd, needsPreview(m))
-			}
-		case "l":
-			if m.grouped {
-				cmd := m.setCurrentGroupCollapsed(false)
-				return m, tea.Batch(cmd, needsPreview(m))
-			}
-		case " ":
-			if m.grouped && !m.deleteMode {
-				cmd := m.handleGroupSpace()
-				return m, tea.Batch(cmd, needsPreview(m))
-			}
-			return m, nil
-		case "alt+enter", "ctrl+o":
-			if m.hasTmux {
-				if m.mode == "all" {
-					return m.setAction(true)
-				}
-				return m.setAction(false)
-			}
-			return m, nil
-		case "enter":
-			return m.setAction(m.mode == "tmux" && m.hasTmux)
-		}
-	}
-
-	if !m.deleteMode {
-		switch msg.String() {
-		case "ctrl+n":
-			oldIndex := m.list.Index()
-			m.list.CursorDown()
-			m.skipSeparatorSelection(oldIndex)
-			return m.afterMove()
-		case "ctrl+p":
-			oldIndex := m.list.Index()
-			m.list.CursorUp()
-			m.skipSeparatorSelection(oldIndex)
-			return m.afterMove()
-		}
-	}
-
-	return m.passToList(msg)
-}
-
 func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	wasFiltering := m.list.SettingFilter()
 	oldFilterState := m.list.FilterState()
@@ -306,7 +122,10 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.renameID != "" || m.confirmingDelete() || m.deleting {
+	if m.renameID != "" || m.confirmingDelete() || m.deleting || m.dirpickerOpen {
+		if m.dirpickerOpen {
+			return m.handleDirpickerMouse(msg)
+		}
 		return m, nil
 	}
 
@@ -377,6 +196,19 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.afterMove()
 	}
 
+	return m, nil
+}
+
+func (m model) handleDirpickerMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	m.dirpicker.setListHeight(m.dirpickerHeight())
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		cmd := m.dirpicker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+		return m, cmd
+	case tea.MouseButtonWheelDown:
+		cmd := m.dirpicker.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+		return m, cmd
+	}
 	return m, nil
 }
 
