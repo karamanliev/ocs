@@ -324,7 +324,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, nil
-		case "enter":
+		case "enter", "d":
 			if len(m.selected) == 0 {
 				if _, ok := currentSessionID(m); !ok {
 					return m, nil

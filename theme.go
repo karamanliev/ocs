@@ -23,7 +23,8 @@ type theme struct {
 	modalBg          lipgloss.Color
 	modalPromptFg    lipgloss.Color
 	modalHintFg      lipgloss.Color
-	previewBorder    lipgloss.Color
+	previewBorderAll  lipgloss.Color
+	previewBorderTmux lipgloss.Color
 	previewBg        lipgloss.Color
 	previewTitleFg   lipgloss.Color
 	previewContentFg lipgloss.Color
@@ -42,71 +43,73 @@ type theme struct {
 }
 
 var darkTheme = theme{
-	timeFresh:        lipgloss.Color("#FF6B6B"),
-	timeHour:         lipgloss.Color("#F9A825"),
-	timeDay:          lipgloss.Color("#4ECDC4"),
-	timeOld:          lipgloss.Color("#B983FF"),
-	indicatorRunning: lipgloss.Color("#69F0AE"),
-	indicatorActive:  lipgloss.Color("#4B5563"),
-	dim:              lipgloss.Color("#6B7280"),
-	cursorBgAll:      lipgloss.Color("#2A3A4A"),
-	cursorBgTmux:     lipgloss.Color("#3A2A4A"),
-	border:           lipgloss.Color("#4B5563"),
-	colHeaderFg:      lipgloss.Color("#9CA3AF"),
-	modalBorder:      lipgloss.Color("#FF6B6B"),
-	modalBg:          lipgloss.Color("#1A1A2E"),
-	modalPromptFg:    lipgloss.Color("#FFFFFF"),
-	modalHintFg:      lipgloss.Color("#9CA3AF"),
-	previewBorder:    lipgloss.Color("#4ECDC4"),
-	previewBg:        lipgloss.Color("#1A1A2E"),
-	previewTitleFg:   lipgloss.Color("#FFFFFF"),
-	previewContentFg: lipgloss.Color("#D1D5DB"),
-	filterPrompt:     lipgloss.Color("#F9A825"),
-	filterMatch:      lipgloss.Color("#FF8C00"),
-	accent:           lipgloss.Color("#60A5FA"),
-	textMain:         lipgloss.Color("#E5E7EB"),
-	textMuted:        lipgloss.Color("#4B5563"),
-	footerKeyAll:     lipgloss.Color("#6B8DB5"),
-	footerKeyTmux:    lipgloss.Color("#8B7DB0"),
-	footerLabel:      lipgloss.Color("#6B7280"),
-	titleAllFg:       lipgloss.Color("#6B8DB5"),
-	titleTmuxFg:      lipgloss.Color("#8B7DB0"),
-	scrollbarThumb:   lipgloss.Color("#4ECDC4"),
-	scrollbarTrack:   lipgloss.Color("#2D3748"),
+	timeFresh:         lipgloss.Color("#FF6B6B"),
+	timeHour:          lipgloss.Color("#F9A825"),
+	timeDay:           lipgloss.Color("#4ECDC4"),
+	timeOld:           lipgloss.Color("#B983FF"),
+	indicatorRunning:  lipgloss.Color("#69F0AE"),
+	indicatorActive:   lipgloss.Color("#4B5563"),
+	dim:               lipgloss.Color("#6B7280"),
+	cursorBgAll:       lipgloss.Color("#2A3A4A"),
+	cursorBgTmux:      lipgloss.Color("#3A2A4A"),
+	border:            lipgloss.Color("#4B5563"),
+	colHeaderFg:       lipgloss.Color("#9CA3AF"),
+	modalBorder:       lipgloss.Color("#FF6B6B"),
+	modalBg:           lipgloss.Color("#1A1A2E"),
+	modalPromptFg:     lipgloss.Color("#FFFFFF"),
+	modalHintFg:       lipgloss.Color("#9CA3AF"),
+	previewBorderAll:  lipgloss.Color("#4ECDC4"),
+	previewBorderTmux: lipgloss.Color("#B983FF"),
+	previewBg:         lipgloss.Color("#1A1A2E"),
+	previewTitleFg:    lipgloss.Color("#FFFFFF"),
+	previewContentFg:  lipgloss.Color("#D1D5DB"),
+	filterPrompt:      lipgloss.Color("#F9A825"),
+	filterMatch:       lipgloss.Color("#FF8C00"),
+	accent:            lipgloss.Color("#4ECDC4"),
+	textMain:          lipgloss.Color("#E5E7EB"),
+	textMuted:         lipgloss.Color("#4B5563"),
+	footerKeyAll:      lipgloss.Color("#4ECDC4"),
+	footerKeyTmux:     lipgloss.Color("#B983FF"),
+	footerLabel:       lipgloss.Color("#6B7280"),
+	titleAllFg:        lipgloss.Color("#4ECDC4"),
+	titleTmuxFg:       lipgloss.Color("#B983FF"),
+	scrollbarThumb:    lipgloss.Color("#4ECDC4"),
+	scrollbarTrack:    lipgloss.Color("#2D3748"),
 }
 
 var lightTheme = theme{
-	timeFresh:        lipgloss.Color("#DC2626"),
-	timeHour:         lipgloss.Color("#D97706"),
-	timeDay:          lipgloss.Color("#0891B2"),
-	timeOld:          lipgloss.Color("#7C3AED"),
-	indicatorRunning: lipgloss.Color("#16A34A"),
-	indicatorActive:  lipgloss.Color("#9CA3AF"),
-	dim:              lipgloss.Color("#9CA3AF"),
-	cursorBgAll:      lipgloss.Color("#D0E0F0"),
-	cursorBgTmux:     lipgloss.Color("#E0D0F0"),
-	border:           lipgloss.Color("#D1D5DB"),
-	colHeaderFg:      lipgloss.Color("#6B7280"),
-	modalBorder:      lipgloss.Color("#DC2626"),
-	modalBg:          lipgloss.Color("#F9FAFB"),
-	modalPromptFg:    lipgloss.Color("#111827"),
-	modalHintFg:      lipgloss.Color("#6B7280"),
-	previewBorder:    lipgloss.Color("#0891B2"),
-	previewBg:        lipgloss.Color("#F9FAFB"),
-	previewTitleFg:   lipgloss.Color("#111827"),
-	previewContentFg: lipgloss.Color("#374151"),
-	filterPrompt:     lipgloss.Color("#D97706"),
-	filterMatch:      lipgloss.Color("#E65100"),
-	accent:           lipgloss.Color("#2563EB"),
-	textMain:         lipgloss.Color("#1F2937"),
-	textMuted:        lipgloss.Color("#D1D5DB"),
-	footerKeyAll:     lipgloss.Color("#5B7D9F"),
-	footerKeyTmux:    lipgloss.Color("#7B6D9F"),
-	footerLabel:      lipgloss.Color("#9CA3AF"),
-	titleAllFg:       lipgloss.Color("#5B7D9F"),
-	titleTmuxFg:      lipgloss.Color("#7B6D9F"),
-	scrollbarThumb:   lipgloss.Color("#0891B2"),
-	scrollbarTrack:   lipgloss.Color("#E5E7EB"),
+	timeFresh:         lipgloss.Color("#DC2626"),
+	timeHour:          lipgloss.Color("#D97706"),
+	timeDay:           lipgloss.Color("#0891B2"),
+	timeOld:           lipgloss.Color("#B983FF"),
+	indicatorRunning:  lipgloss.Color("#16A34A"),
+	indicatorActive:   lipgloss.Color("#9CA3AF"),
+	dim:               lipgloss.Color("#9CA3AF"),
+	cursorBgAll:       lipgloss.Color("#D0E0F0"),
+	cursorBgTmux:      lipgloss.Color("#E0D0F0"),
+	border:            lipgloss.Color("#D1D5DB"),
+	colHeaderFg:       lipgloss.Color("#6B7280"),
+	modalBorder:       lipgloss.Color("#DC2626"),
+	modalBg:           lipgloss.Color("#F9FAFB"),
+	modalPromptFg:     lipgloss.Color("#111827"),
+	modalHintFg:       lipgloss.Color("#6B7280"),
+	previewBorderAll:  lipgloss.Color("#0891B2"),
+	previewBorderTmux: lipgloss.Color("#B983FF"),
+	previewBg:         lipgloss.Color("#F9FAFB"),
+	previewTitleFg:    lipgloss.Color("#111827"),
+	previewContentFg:  lipgloss.Color("#374151"),
+	filterPrompt:      lipgloss.Color("#D97706"),
+	filterMatch:       lipgloss.Color("#E65100"),
+	accent:            lipgloss.Color("#0891B2"),
+	textMain:          lipgloss.Color("#1F2937"),
+	textMuted:         lipgloss.Color("#D1D5DB"),
+	footerKeyAll:      lipgloss.Color("#0891B2"),
+	footerKeyTmux:     lipgloss.Color("#B983FF"),
+	footerLabel:       lipgloss.Color("#9CA3AF"),
+	titleAllFg:        lipgloss.Color("#0891B2"),
+	titleTmuxFg:       lipgloss.Color("#B983FF"),
+	scrollbarThumb:    lipgloss.Color("#0891B2"),
+	scrollbarTrack:    lipgloss.Color("#E5E7EB"),
 }
 
 var themeForDark = map[bool]theme{
@@ -161,8 +164,14 @@ func (t theme) titleColor(mode string) lipgloss.Color {
 	return t.titleAllFg
 }
 
+func (t theme) previewBorderColor(mode string) lipgloss.Color {
+	if mode == "tmux" {
+		return t.previewBorderTmux
+	}
+	return t.previewBorderAll
+}
+
 func (t theme) filterStyles() (prompt, cursor lipgloss.Style) {
 	base := lipgloss.NewStyle().Foreground(t.filterPrompt)
 	return base, base
 }
-

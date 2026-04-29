@@ -212,7 +212,7 @@ func (m model) renderFooter() string {
 		return " " + line + " "
 	} else if m.deleteMode {
 		left = build("space", " toggle") + sepStyle.Render(" · ") +
-			build("enter", " delete") + sepStyle.Render(" · ") +
+			build("d/<CR>", " delete") + sepStyle.Render(" · ") +
 			build("esc", " cancel")
 	} else {
 		var parts []string
@@ -669,7 +669,7 @@ func (m model) renderPreviewPane(width int, height int) string {
 	}
 
 	return m.renderPanel(strings.Join(rendered, "\n"), width, height,
-		"Preview", rightTitle, m.theme.previewBorder, m.theme.modalHintFg, m.theme.previewBg)
+		"Preview", rightTitle, m.theme.previewBorderColor(m.mode), m.theme.modalHintFg, m.theme.previewBg)
 }
 
 // inPreviewBody reports whether the terminal cell (x,y) is inside the preview
@@ -897,7 +897,7 @@ func (m model) renderKeybindsBox() string {
 		}
 
 		keyBlock := keyStyle.Render(keyStr)
-		line := keyBlock + descStyle.Render(" " + descStr)
+		line := keyBlock + descStyle.Render(" "+descStr)
 		bodyLines = append(bodyLines, line)
 	}
 
@@ -997,7 +997,7 @@ func (m model) renderRenameBox() string {
 	}
 	body += "\n\n" + field
 
-	return m.renderModalBox(boxWidth, m.theme.accent, badge, m.theme.accent, body, "enter save, esc cancel")
+	return m.renderModalBox(boxWidth, m.theme.accent, badge, m.theme.accent, body, "<CR> save, esc cancel")
 }
 
 func (m model) renderDirpickerModal() string {
@@ -1124,7 +1124,7 @@ func keybindsEntries() []struct{ key, desc string } {
 		{"", ""},
 		{"", "--- delete mode ---"},
 		{"space", "Toggle selection"},
-		{"enter", "Confirm delete"},
+		{"<CR>", "Confirm delete"},
 		{"esc", "Cancel"},
 		{"", ""},
 		{"", "--- dir picker ---"},
@@ -1132,7 +1132,7 @@ func keybindsEntries() []struct{ key, desc string } {
 		{"h / l", "Parent / child directory"},
 		{".", "Toggle hidden"},
 		{"/", "Filter directories"},
-		{"enter", "Select directory"},
+		{"<CR>", "Select directory"},
 		{"esc", "Back / close"},
 		{"q", "Close"},
 	}
