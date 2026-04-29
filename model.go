@@ -42,6 +42,14 @@ type model struct {
 	renameInput      textinput.Model
 	forkMode         bool
 	forkSessionID    string
+	confirmingNewSession bool
+	pendingNewSessionDir string
+	pendingNewSessionTmux bool
+	confirmingFork   bool
+	pendingForkID    string
+	pendingForkTitle string
+	pendingForkDir   string
+	forking          bool
 	lastClickAt      time.Time
 	lastClickIx      int
 	deleting         bool
@@ -61,6 +69,27 @@ func doDeleteCmd(agentPath string, ids []string) tea.Cmd {
 			deleteSession(agentPath, id)
 		}
 		return deleteDoneMsg{}
+	}
+}
+
+type forkDoneMsg struct {
+	newID string
+	dir   string
+	title string
+	tmux  bool
+	err   error
+}
+
+func doForkCmd(dbPath, sessionID, title, dir string, useTmux bool) tea.Cmd {
+	return func() tea.Msg {
+		newID, err := forkSession(dbPath, sessionID, title)
+		return forkDoneMsg{
+			newID: newID,
+			dir:   dir,
+			title: title,
+			tmux:  useTmux,
+			err:   err,
+		}
 	}
 }
 
@@ -300,31 +329,34 @@ func (m *model) finishFork() tea.Cmd {
 		m.renameInput.SetValue("")
 		return nil
 	}
-	newID, err := forkSession(m.dbPath, m.forkSessionID, title)
-	if err != nil {
-		m.forkMode = false
-		m.forkSessionID = ""
-		m.renameInput.Blur()
-		m.renameInput.SetValue("")
-		return nil
-	}
-	m.actionID = newID
 	// Resolve directory from the original session
+	var dir string
 	for _, s := range m.sessions {
 		if s.ID == m.forkSessionID {
-			m.actionDir = s.Directory
+			dir = s.Directory
 			break
 		}
 	}
-	m.actionTitle = title
-	m.actionTmux = m.mode == "tmux" && m.hasTmux
-	return tea.Quit
+	m.forkMode = false
+	m.forking = true
+	useTmux := m.mode == "tmux" && m.hasTmux
+	return tea.Batch(
+		m.spinner.Tick,
+		doForkCmd(m.dbPath, m.forkSessionID, title, dir, useTmux),
+	)
 }
 
 func (m *model) cancelRename() {
 	m.renameID = ""
 	m.forkMode = false
 	m.forkSessionID = ""
+	m.confirmingNewSession = false
+	m.pendingNewSessionDir = ""
+	m.confirmingFork = false
+	m.pendingForkID = ""
+	m.pendingForkTitle = ""
+	m.pendingForkDir = ""
+	m.forking = false
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
 }

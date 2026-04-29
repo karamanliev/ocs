@@ -14,6 +14,9 @@ const (
 	stateFilepicker
 	stateConfirmingDelete
 	stateDeleting
+	stateConfirmingNewSession
+	stateConfirmingFork
+	stateForking
 )
 
 func (m model) appState() appState {
@@ -22,10 +25,16 @@ func (m model) appState() appState {
 		return stateRenaming
 	case m.dirpickerOpen:
 		return stateFilepicker
+	case m.forking:
+		return stateForking
 	case m.deleting:
 		return stateDeleting
 	case m.confirmingDelete():
 		return stateConfirmingDelete
+	case m.confirmingFork:
+		return stateConfirmingFork
+	case m.confirmingNewSession:
+		return stateConfirmingNewSession
 	default:
 		return stateNormal
 	}
@@ -39,8 +48,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDirpickerKeys(msg)
 	case stateConfirmingDelete:
 		return m.handleConfirmDeleteKeys(msg)
-	case stateDeleting:
+	case stateDeleting, stateForking:
 		return m, nil
+	case stateConfirmingNewSession:
+		return m.handleConfirmNewSessionKeys(msg)
+	case stateConfirmingFork:
+		return m.handleConfirmForkKeys(msg)
 	default:
 		return m.handleNormalKeys(msg)
 	}
@@ -87,6 +100,48 @@ func (m model) handleConfirmDeleteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
 	case "n", "N", "esc", "q":
 		m.confirming = false
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) handleConfirmNewSessionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.confirmingNewSession = false
+		m.actionDir = m.pendingNewSessionDir
+		m.actionNewSession = true
+		m.actionTmux = m.pendingNewSessionTmux
+		m.pendingNewSessionDir = ""
+		return m, tea.Quit
+	case "n", "N", "esc", "q":
+		m.confirmingNewSession = false
+		m.pendingNewSessionDir = ""
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m model) handleConfirmForkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		m.confirmingFork = false
+		m.forking = true
+		return m, tea.Batch(
+			m.spinner.Tick,
+			doForkCmd(
+				m.dbPath,
+				m.pendingForkID,
+				"!DUP "+m.pendingForkTitle,
+				m.pendingForkDir,
+				m.mode == "tmux" && m.hasTmux,
+			),
+		)
+	case "n", "N", "esc", "q":
+		m.confirmingFork = false
+		m.pendingForkID = ""
+		m.pendingForkTitle = ""
+		m.pendingForkDir = ""
 		return m, nil
 	}
 	return m, nil
@@ -347,10 +402,10 @@ func (m model) handleNewSessionKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.actionDir = dir
-	m.actionNewSession = true
-	m.actionTmux = m.mode == "tmux" && m.hasTmux
-	return m, tea.Quit
+	m.confirmingNewSession = true
+	m.pendingNewSessionDir = dir
+	m.pendingNewSessionTmux = m.mode == "tmux" && m.hasTmux
+	return m, nil
 }
 
 func (m model) handleNewSessionPickerKey() (tea.Model, tea.Cmd) {
@@ -367,13 +422,9 @@ func (m model) handleForkKey() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	newID, err := forkSession(m.dbPath, sess.ID, "!DUP "+sess.Title)
-	if err != nil {
-		return m, nil
-	}
-	m.actionID = newID
-	m.actionDir = sess.Directory
-	m.actionTitle = "!DUP " + sess.Title
-	m.actionTmux = m.mode == "tmux" && m.hasTmux
-	return m, tea.Quit
+	m.confirmingFork = true
+	m.pendingForkID = sess.ID
+	m.pendingForkTitle = sess.Title
+	m.pendingForkDir = sess.Directory
+	return m, nil
 }

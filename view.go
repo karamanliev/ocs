@@ -40,10 +40,16 @@ func (m model) View() string {
 	}
 	out += "\n" + footer
 
-	if m.deleting {
+	if m.forking {
+		out = m.renderOverlay(out, m.renderForkingBox(), m.theme.modalBg, true)
+	} else if m.deleting {
 		out = m.renderOverlay(out, m.renderDeletingBox(), m.theme.modalBg, true)
 	} else if m.confirmingDelete() {
 		out = m.renderOverlay(out, m.renderDeleteBox(), m.theme.modalBg, true)
+	} else if m.confirmingFork {
+		out = m.renderOverlay(out, m.renderConfirmForkBox(), m.theme.modalBg, true)
+	} else if m.confirmingNewSession {
+		out = m.renderOverlay(out, m.renderConfirmNewSessionBox(), m.theme.modalBg, true)
 	}
 
 	if m.renameID != "" || m.forkMode {
@@ -744,6 +750,72 @@ func (m model) renderDeletingBox() string {
 	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, "")
+}
+
+func (m model) renderConfirmNewSessionBox() string {
+	prompt := "Create new session?"
+	if m.pendingNewSessionDir != "" {
+		prompt = fmt.Sprintf("Create new session in %s?", m.pendingNewSessionDir)
+	}
+
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	body := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalPromptFg).
+		Width(width).
+		Align(lipgloss.Left).
+		Render(wrapText(prompt, width))
+
+	hint := "y confirm, n cancel"
+	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
+}
+
+func (m model) renderConfirmForkBox() string {
+	prompt := "Duplicate session?"
+	if m.pendingForkTitle != "" {
+		prompt = fmt.Sprintf("Duplicate \"%s\"?", m.pendingForkTitle)
+	}
+
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	body := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalPromptFg).
+		Width(width).
+		Align(lipgloss.Left).
+		Render(wrapText(prompt, width))
+
+	hint := "y confirm, n cancel"
+	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, hint)
+}
+
+func (m model) renderForkingBox() string {
+	width := 48
+	if m.width < 64 {
+		width = m.width - 16
+	}
+	if width < 30 {
+		width = 30
+	}
+
+	spin := m.spinner.View()
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Duplicating..."))
+	body = lipgloss.NewStyle().Width(width).Align(lipgloss.Center).Render(body)
+
+	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, "")
 }
 
 func (m model) renderRenameBox() string {
