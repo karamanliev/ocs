@@ -412,6 +412,25 @@ func (m model) renderOverlay(background string, box string, _ lipgloss.Color, di
 	return strings.Join(result, "\n")
 }
 
+type hintPart struct {
+	key   string
+	label string
+}
+
+func (m model) buildHint(parts []hintPart) string {
+	keyStyle := lipgloss.NewStyle().Foreground(m.theme.accent).Background(m.theme.modalBg)
+	labelStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
+	sepStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
+	var result string
+	for i, p := range parts {
+		if i > 0 {
+			result += sepStyle.Render(" · ")
+		}
+		result += keyStyle.Render(p.key) + labelStyle.Render(p.label)
+	}
+	return result
+}
+
 func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge string, badgeColor lipgloss.Color, body string, hint string) string {
 	badgeView := lipgloss.NewStyle().
 		Bold(true).
@@ -423,11 +442,9 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 	bodyView := lipgloss.NewStyle().
 		Foreground(m.theme.textMain).
 		Background(m.theme.modalBg).
-		Width(width).
 		Render(body)
 
 	hintView := lipgloss.NewStyle().
-		Foreground(m.theme.modalHintFg).
 		Background(m.theme.modalBg).
 		Render(hint)
 
@@ -724,7 +741,10 @@ func (m model) renderDeleteBox() string {
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width))
 
-	hint := "y confirm, n cancel"
+	hint := m.buildHint([]hintPart{
+		{"y", " confirm"},
+		{"n", " cancel"},
+	})
 	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, hint)
 }
 
@@ -765,7 +785,10 @@ func (m model) renderConfirmNewSessionBox() string {
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width))
 
-	hint := "y confirm, n cancel"
+	hint := m.buildHint([]hintPart{
+		{"y", " confirm"},
+		{"n", " cancel"},
+	})
 	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
 }
 
@@ -790,7 +813,10 @@ func (m model) renderConfirmForkBox() string {
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width))
 
-	hint := "y confirm, n cancel"
+	hint := m.buildHint([]hintPart{
+		{"y", " confirm"},
+		{"n", " cancel"},
+	})
 	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, hint)
 }
 
@@ -831,7 +857,10 @@ func (m model) renderConfirmCloseTmuxBox() string {
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width))
 
-	hint := "y confirm, n cancel"
+	hint := m.buildHint([]hintPart{
+		{"y", " confirm"},
+		{"n", " cancel"},
+	})
 	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, hint)
 }
 
@@ -873,7 +902,6 @@ func (m model) renderKeybindsBox() string {
 	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.accent).Background(bg).Width(keyColW)
 	descStyle := lipgloss.NewStyle().Foreground(m.theme.modalPromptFg).Background(bg)
 	sepStyle := lipgloss.NewStyle().Foreground(m.theme.textMuted).Background(bg)
-	hintStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(bg)
 
 	entries := keybindsEntries()
 
@@ -937,7 +965,10 @@ func (m model) renderKeybindsBox() string {
 		Background(bg).
 		Render(bodyStr)
 
-	hintView := hintStyle.Render("j/k scroll, esc/q/? close")
+	hintView := m.buildHint([]hintPart{
+		{"j/k", " scroll"},
+		{"esc", " close"},
+	})
 
 	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
 
@@ -997,7 +1028,11 @@ func (m model) renderRenameBox() string {
 	}
 	body += "\n\n" + field
 
-	return m.renderModalBox(boxWidth, m.theme.accent, badge, m.theme.accent, body, "<CR> save, esc cancel")
+	hint := m.buildHint([]hintPart{
+		{"<CR>", " save"},
+		{"esc", " cancel"},
+	})
+	return m.renderModalBox(boxWidth, m.theme.accent, badge, m.theme.accent, body, hint)
 }
 
 func (m model) renderDirpickerModal() string {
@@ -1009,21 +1044,12 @@ func (m model) renderDirpickerModal() string {
 		Width(width).
 		Render(dpView)
 
-	keyStyle := lipgloss.NewStyle().Foreground(m.theme.accent).Background(m.theme.modalBg)
-	labelStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
-	sepStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg)
-
-	build := func(key, label string) string {
-		return keyStyle.Render(key) + labelStyle.Render(label)
-	}
-
-	parts := []string{
-		build("<CR>", " confirm"),
-		sepStyle.Render(" · ") + build("/", " filter"),
-		sepStyle.Render(" · ") + build("esc", " clear/close"),
-		sepStyle.Render(" · ") + build(".", " hidden"),
-	}
-	hint := strings.Join(parts, "")
+	hint := m.buildHint([]hintPart{
+		{"<CR>", " confirm"},
+		{"/", " filter"},
+		{"esc", " clear/close"},
+		{".", " hidden"},
+	})
 
 	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
 }
