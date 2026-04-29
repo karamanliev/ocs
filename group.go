@@ -6,6 +6,7 @@ import (
 
 type groupInfo struct {
 	path        string
+	worktree    string
 	sessionIDs  []string
 	collapsed   bool
 	filterValue string
@@ -13,6 +14,7 @@ type groupInfo struct {
 
 type groupHeaderItem struct {
 	path        string
+	worktree    string
 	count       int
 	collapsed   bool
 	filterValue string
@@ -47,6 +49,7 @@ func buildGroups(sessions []Session, collapsedByPath map[string]bool) []groupInf
 			groupIndex[s.Directory] = ix
 			groups = append(groups, groupInfo{
 				path:      s.Directory,
+				worktree:  s.Worktree,
 				collapsed: collapsedByPath[s.Directory],
 			})
 		}

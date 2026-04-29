@@ -18,6 +18,7 @@ type Session struct {
 	Title     string
 	Updated   int64
 	Directory string
+	Worktree  string
 }
 
 type previewData struct {
@@ -47,8 +48,9 @@ func getSessions(dbPath string) ([]Session, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT s.id, s.title, s.time_updated, s.directory
+		SELECT s.id, s.title, s.time_updated, s.directory, p.worktree
 		FROM session s
+		JOIN project p ON p.id = s.project_id
 		WHERE s.parent_id IS NULL
 		ORDER BY s.time_updated DESC
 	`)
@@ -60,7 +62,7 @@ func getSessions(dbPath string) ([]Session, error) {
 	var sessions []Session
 	for rows.Next() {
 		var s Session
-		if err := rows.Scan(&s.ID, &s.Title, &s.Updated, &s.Directory); err != nil {
+		if err := rows.Scan(&s.ID, &s.Title, &s.Updated, &s.Directory, &s.Worktree); err != nil {
 			return nil, err
 		}
 		sessions = append(sessions, s)

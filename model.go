@@ -523,6 +523,7 @@ func buildListItems(ordered []Session, groups []groupInfo, states map[string]ses
 		}
 		items = append(items, groupHeaderItem{
 			path:        g.path,
+			worktree:    g.worktree,
 			count:       len(g.sessionIDs),
 			collapsed:   !expanded,
 			filterValue: g.filterValue,

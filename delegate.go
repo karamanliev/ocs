@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,23 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
 )
+
+var homeDir string
+
+func init() {
+	homeDir, _ = os.UserHomeDir()
+}
+
+func displayPath(path string) string {
+	if homeDir != "" && strings.HasPrefix(path, homeDir) {
+		return "~" + path[len(homeDir):]
+	}
+	return path
+}
+
+func isWorktree(dir, worktree string) bool {
+	return worktree != "" && dir != worktree
+}
 
 type sessionItem struct {
 	session      Session
@@ -124,10 +142,6 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 	}
 	titleText := truncate.StringWithTail(i.session.Title, uint(titleWidth), "…")
-	dirText := ""
-	if !d.grouped {
-		dirText = truncate.StringWithTail(i.session.Directory, uint(d.dirW), "…")
-	}
 
 	prefix := "  "
 
@@ -143,7 +157,13 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		hTitle := padRight(highlightSubstring(titleText, filterText, d.theme.filterMatch), d.titleW)
 		hDir := ""
 		if !d.grouped {
-			hDir = padRight(highlightSubstring(dirText, filterText, d.theme.filterMatch), d.dirW)
+			pathText := displayPath(i.session.Directory)
+			if isWorktree(i.session.Directory, i.session.Worktree) {
+				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
+				hDir = padRight(highlightSubstring(pathText, filterText, d.theme.filterMatch)+arrowStyle.Render(" ↗"), d.dirW)
+			} else {
+				hDir = padRight(highlightSubstring(pathText, filterText, d.theme.filterMatch), d.dirW)
+			}
 		}
 
 		parts := []string{
@@ -185,7 +205,13 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 		titleStr = padRight(highlightSubstringStyled(titleText, filterText, d.theme.textMain, d.theme.filterMatch), d.titleW)
 		if !d.grouped {
-			dirStr = padRight(highlightSubstringStyled(dirText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
+			pathText := displayPath(i.session.Directory)
+			if isWorktree(i.session.Directory, i.session.Worktree) {
+				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
+				dirStr = padRight(highlightSubstringStyled(pathText, filterText, d.theme.dim, d.theme.filterMatch)+arrowStyle.Render(" ↗"), d.dirW)
+			} else {
+				dirStr = padRight(highlightSubstringStyled(pathText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
+			}
 		}
 	} else {
 		if d.grouped {
@@ -193,7 +219,13 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 		}
 		titleStr = lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
 		if !d.grouped {
-			dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(dirText)
+			pathText := displayPath(i.session.Directory)
+			if isWorktree(i.session.Directory, i.session.Worktree) {
+				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
+				dirStr = padRight(lipgloss.NewStyle().Foreground(d.theme.dim).Render(pathText)+arrowStyle.Render(" ↗"), d.dirW)
+			} else {
+				dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(pathText)
+			}
 		}
 	}
 
@@ -230,7 +262,12 @@ func (d *sessionDelegate) renderGroupHeader(w io.Writer, m list.Model, index int
 	if !item.collapsed {
 		marker = "▼"
 	}
-	label := "  " + marker + " " + item.path + " "
+	pathText := displayPath(item.path)
+	arrowText := ""
+	if item.worktree != "" && item.path != item.worktree {
+		arrowText = "↗ "
+	}
+	label := "  " + marker + " " + pathText + " " + arrowText
 	count := "(" + strconv.Itoa(item.count) + ")"
 	line := label + count
 	line = padRight(truncate.StringWithTail(line, uint(max(1, d.width-2)), "…"), d.width)
@@ -239,13 +276,15 @@ func (d *sessionDelegate) renderGroupHeader(w io.Writer, m list.Model, index int
 	accent := d.theme.titleColor(d.mode)
 	markStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
 	countStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
+	arrowStyle := lipgloss.NewStyle().Bold(true).Foreground(d.theme.indicatorRunning)
 	if isCursor {
 		base = base.Background(d.theme.cursorBg(d.mode)).Foreground(d.theme.dim)
 		markStyle = markStyle.Background(d.theme.cursorBg(d.mode))
 		countStyle = countStyle.Background(d.theme.cursorBg(d.mode))
+		arrowStyle = arrowStyle.Background(d.theme.cursorBg(d.mode))
 	}
-	baseLine := base.Render("  ") + markStyle.Render(marker) + base.Render(" "+item.path+" ")
-	fmt.Fprint(w, baseLine+countStyle.Render(count))
+	baseLine := base.Render("  ") + markStyle.Render(marker) + base.Render(" "+pathText+" ")
+	fmt.Fprint(w, baseLine+arrowStyle.Render(arrowText)+countStyle.Render(count))
 }
 
 func padRight(s string, width int) string {

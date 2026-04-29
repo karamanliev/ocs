@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -609,8 +610,14 @@ func (m model) renderPreviewPane(width int, height int) string {
 		if sess, ok := sessionFromItem(item); ok {
 			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
 				truncate.StringWithTail(sess.Title, uint(contentW), "...")))
+			pathStr := displayPath(sess.Directory)
+			if isWorktree(sess.Directory, sess.Worktree) {
+				wtName := filepath.Base(sess.Worktree)
+				arrow := lipgloss.NewStyle().Foreground(m.theme.indicatorRunning).Render("↗")
+				pathStr += " [" + arrow + " " + wtName + "]"
+			}
 			header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
-				truncate.StringWithTail(sess.Directory, uint(contentW), "...")))
+				truncate.StringWithTail(pathStr, uint(contentW), "...")))
 			header = append(header, "")
 
 			cached, ok := m.firstMsgs[sess.ID]
@@ -621,7 +628,7 @@ func (m model) renderPreviewPane(width int, height int) string {
 			}
 		} else if groupHeader, ok := item.(groupHeaderItem); ok {
 			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
-				truncate.StringWithTail(groupHeader.path, uint(contentW), "...")))
+				truncate.StringWithTail(displayPath(groupHeader.path), uint(contentW), "...")))
 			header = append(header, "")
 			bodyLines = append(bodyLines,
 				padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(fmt.Sprintf("%d sessions in group", groupHeader.count)),
