@@ -1014,9 +1014,9 @@ func (m model) renderRenameBox() string {
 	field := lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(m.theme.border).
-		Background(m.theme.previewBg).
 		Padding(0, 1).
 		Width(innerWidth).
+		BorderRightBackground(m.theme.modalBg).
 		Render(inputView)
 
 	badge := "Rename"
