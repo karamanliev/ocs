@@ -255,7 +255,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, cmd
 			}
 			return m, nil
-		case "enter", "ctrl+d":
+		case "enter":
 			if len(m.selected) == 0 {
 				if _, ok := currentSessionID(m); !ok {
 					return m, nil
@@ -290,14 +290,14 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.showPreview = !m.showPreview
 			m.resize()
 			return m, needsPreview(m)
-		case "ctrl+g":
+		case "g":
 			m.grouped = !m.grouped
 			if len(m.groups) == 0 {
 				m.syncGroups()
 			}
 			cmd := m.rebuildItems()
 			return m, tea.Batch(cmd, needsPreview(m))
-		case "ctrl+d":
+		case "d":
 			m.deleteMode = true
 			cmd := m.rebuildItems()
 			return m, cmd
@@ -307,7 +307,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 			return m, nil
-		case "ctrl+t":
+		case "t":
 			if m.hasTmux {
 				m.mode = toggleMode(m)
 				m.delegate.mode = m.mode
@@ -315,7 +315,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 			return m, nil
-		case "ctrl+r":
+		case "r":
 			m.startRename()
 			return m, nil
 		case "[":

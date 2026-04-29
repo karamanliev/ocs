@@ -54,17 +54,19 @@ ocs --theme dark    # force dark theme (light also available)
 | --- | --- |
 | `enter` | Open selected session, mode dependent: ALL resumes, TMUX opens in tmux; group headers do nothing |
 | `alt+enter`, `ctrl+o` | Open in tmux when in ALL mode, resume when in TMUX mode |
-| `ctrl+t` | Toggle ALL and TMUX mode |
-| `ctrl+g` | Toggle grouped view |
+| `t` | Toggle ALL and TMUX mode |
+| `g` | Toggle grouped view |
 | `/` | Start filtering sessions |
 | `space` | Collapse or expand current group |
 | `ctrl+space` | Collapse or expand all groups |
 | `h`, `l` | Collapse or expand current group |
 | `[` / `]` | Jump to previous or next group |
-| `ctrl+d` | Enter delete mode |
-| `ctrl+r` | Rename selected session |
-| `n` | Create new session in selected item's directory |
-| `N` | Open filepicker to choose directory for new session |
+| `d` | Enter delete mode |
+| `r` | Rename selected session |
+| `n` | Create new session in selected item's directory (confirmation modal) |
+| `N` | Open directory picker to choose directory for new session |
+| `y` | Duplicate selected session with `!DUP` prefix (confirmation modal) |
+| `Y` | Duplicate selected session with a custom title (rename modal) |
 | `tab` | Toggle preview pane |
 | `J`, `K`, `shift+up`, `shift+down` | Scroll preview |
 | Mouse wheel | Scroll preview or list |

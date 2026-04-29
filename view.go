@@ -228,19 +228,19 @@ func (m model) renderFooter() string {
 			if m.mode == "tmux" {
 				toggleLabel = " toggle all"
 			}
-			parts = append(parts, sepStyle.Render(" · ")+build("<C-t>", toggleLabel))
+			parts = append(parts, sepStyle.Render(" · ")+build("t", toggleLabel))
 		}
-		parts = append(parts, sepStyle.Render(" · ")+build("<C-g>", " group"))
+		parts = append(parts, sepStyle.Render(" · ")+build("g", " group"))
 		if m.grouped {
 			parts = append(parts, sepStyle.Render(" · ")+build("space", " fold"))
 			parts = append(parts, sepStyle.Render(" · ")+build("<C-space>", " all"))
 		}
 		parts = append(parts, sepStyle.Render(" · ")+build("n", " new"))
 		parts = append(parts, sepStyle.Render(" · ")+build("N", " new dir"))
-		parts = append(parts, sepStyle.Render(" · ")+build("<C-r>", " rename"))
+		parts = append(parts, sepStyle.Render(" · ")+build("r", " rename"))
 		parts = append(parts, sepStyle.Render(" · ")+build("y", " fork"))
 		parts = append(parts, sepStyle.Render(" · ")+build("Y", " fork name"))
-		parts = append(parts, sepStyle.Render(" · ")+build("<C-d>", " delete"))
+		parts = append(parts, sepStyle.Render(" · ")+build("d", " delete"))
 		left = strings.Join(parts, "")
 	}
 
