@@ -24,10 +24,20 @@ https://github.com/user-attachments/assets/49dd22b3-77b5-4223-aea4-5e11f714eafa
 ## Installation
 
 ```bash
+curl -sL https://github.com/karamanliev/ocs/releases/latest/download/ocs-linux-amd64.tar.gz \
+  -o /tmp/ocs.tar.gz \
+  && tar xzf /tmp/ocs.tar.gz -C ~/.local/bin/ \
+  && mv ~/.local/bin/ocs-linux-amd64 ~/.local/bin/ocs \
+  && rm /tmp/ocs.tar.gz
+```
+
+Or via Go:
+
+```bash
 go install github.com/karamanliev/ocs@latest
 ```
 
-Or grab a prebuilt binary from the [releases page](https://github.com/karamanliev/ocs/releases).
+Or grab some of the other prebuilt binaries from the [releases page](https://github.com/karamanliev/ocs/releases).
 
 Or build from source:
 
