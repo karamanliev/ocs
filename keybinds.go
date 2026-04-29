@@ -18,7 +18,7 @@ const (
 
 func (m model) appState() appState {
 	switch {
-	case m.renameID != "":
+	case m.renameID != "" || m.forkMode:
 		return stateRenaming
 	case m.dirpickerOpen:
 		return stateFilepicker
@@ -52,6 +52,10 @@ func (m model) handleRenameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelRename()
 		return m, nil
 	case "enter":
+		if m.forkMode {
+			cmd := m.finishFork()
+			return m, cmd
+		}
 		cmd := m.finishRename()
 		return m, cmd
 	}
@@ -297,6 +301,11 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.handleNewSessionKey()
 		case "N":
 			return m.handleNewSessionPickerKey()
+		case "y":
+			return m.handleForkKey()
+		case "Y":
+			m.startFork()
+			return m, nil
 		}
 	}
 
@@ -347,4 +356,24 @@ func (m model) handleNewSessionKey() (tea.Model, tea.Cmd) {
 func (m model) handleNewSessionPickerKey() (tea.Model, tea.Cmd) {
 	m.dirpickerOpen = true
 	return m, m.dirpicker.readDir()
+}
+
+func (m model) handleForkKey() (tea.Model, tea.Cmd) {
+	item := m.list.SelectedItem()
+	if item == nil {
+		return m, nil
+	}
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		return m, nil
+	}
+	newID, err := forkSession(m.dbPath, sess.ID, "!DUP "+sess.Title)
+	if err != nil {
+		return m, nil
+	}
+	m.actionID = newID
+	m.actionDir = sess.Directory
+	m.actionTitle = "!DUP " + sess.Title
+	m.actionTmux = m.mode == "tmux" && m.hasTmux
+	return m, tea.Quit
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"os"
@@ -237,4 +238,163 @@ func getPreviewData(dbPath, sessionID string) previewData {
 		lastAssistant:  queryText("assistant", "DESC"),
 		modelName:      modelName,
 	}
+}
+
+// generateID creates a nanoid-style random identifier with the given prefix.
+func generateID(prefix string) string {
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, 26)
+	if _, err := rand.Read(b); err != nil {
+		for i := range b {
+			b[i] = alphabet[time.Now().UnixNano()%int64(len(alphabet))]
+		}
+	} else {
+		for i := range b {
+			b[i] = alphabet[int(b[i])%len(alphabet)]
+		}
+	}
+	return prefix + string(b)
+}
+
+// forkSession duplicates a session (including all messages and parts) in the
+// database.  Returns the new session ID.  The title is used verbatim for the
+// forked session.
+func forkSession(dbPath, sessionID, title string) (string, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+
+	// Read the original session row.
+	var projectID, slug, directory, version string
+	var shareURL, permission sql.NullString
+	var summaryAdditions, summaryDeletions, summaryFiles sql.NullInt32
+	var summaryDiffs, revert sql.NullString
+	var timeCreated, timeUpdated int64
+	err = db.QueryRow(`
+		SELECT project_id, slug, directory, title, version, share_url,
+			summary_additions, summary_deletions, summary_files, summary_diffs,
+			revert, permission, time_created, time_updated
+		FROM session
+		WHERE id = ?
+	`, sessionID).Scan(
+		&projectID, &slug, &directory, new(string), &version, &shareURL,
+		&summaryAdditions, &summaryDeletions, &summaryFiles, &summaryDiffs,
+		&revert, &permission, &timeCreated, &timeUpdated,
+	)
+	if err != nil {
+		return "", fmt.Errorf("reading session: %w", err)
+	}
+
+	newID := generateID("ses_")
+	now := timeNowMs()
+
+	_, err = db.Exec(`
+		INSERT INTO session
+			(id, project_id, slug, directory, title, version, share_url,
+			 summary_additions, summary_deletions, summary_files, summary_diffs,
+			 revert, permission, time_created, time_updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, newID, projectID, slug, directory, title, version, shareURL,
+		summaryAdditions, summaryDeletions, summaryFiles, summaryDiffs,
+		revert, permission, now, now)
+	if err != nil {
+		return "", fmt.Errorf("inserting session: %w", err)
+	}
+
+	// Copy messages.
+	rows, err := db.Query(`
+		SELECT id, data, time_created, time_updated
+		FROM message
+		WHERE session_id = ?
+	`, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("reading messages: %w", err)
+	}
+
+	type msgInfo struct {
+		oldID       string
+		newID       string
+		data        string
+		timeCreated int64
+		timeUpdated int64
+	}
+	var msgs []msgInfo
+	for rows.Next() {
+		var mi msgInfo
+		if err := rows.Scan(&mi.oldID, &mi.data, &mi.timeCreated, &mi.timeUpdated); err != nil {
+			rows.Close()
+			return "", err
+		}
+		mi.newID = generateID("msg_")
+		msgs = append(msgs, mi)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	for _, mi := range msgs {
+		_, err := db.Exec(`
+			INSERT INTO message (id, session_id, data, time_created, time_updated)
+			VALUES (?, ?, ?, ?, ?)
+		`, mi.newID, newID, mi.data, mi.timeCreated, mi.timeUpdated)
+		if err != nil {
+			return "", fmt.Errorf("inserting message: %w", err)
+		}
+	}
+
+	// Copy parts.
+	partRows, err := db.Query(`
+		SELECT p.id, p.message_id, p.data, p.time_created, p.time_updated
+		FROM part p
+		JOIN message m ON m.id = p.message_id
+		WHERE m.session_id = ?
+	`, sessionID)
+	if err != nil {
+		return "", fmt.Errorf("reading parts: %w", err)
+	}
+
+	type partInfo struct {
+		oldID       string
+		messageID   string
+		newID       string
+		data        string
+		timeCreated int64
+		timeUpdated int64
+	}
+	var parts []partInfo
+	for partRows.Next() {
+		var pi partInfo
+		if err := partRows.Scan(&pi.oldID, &pi.messageID, &pi.data, &pi.timeCreated, &pi.timeUpdated); err != nil {
+			partRows.Close()
+			return "", err
+		}
+		pi.newID = generateID("prt_")
+		parts = append(parts, pi)
+	}
+	partRows.Close()
+	if err := partRows.Err(); err != nil {
+		return "", err
+	}
+
+	// Build a map from old message ID to new message ID.
+	msgMap := make(map[string]string, len(msgs))
+	for _, mi := range msgs {
+		msgMap[mi.oldID] = mi.newID
+	}
+
+	for _, pi := range parts {
+		newMsgID := msgMap[pi.messageID]
+		_, err := db.Exec(`
+			INSERT INTO part (id, message_id, session_id, data, time_created, time_updated)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, pi.newID, newMsgID, newID, pi.data, pi.timeCreated, pi.timeUpdated)
+		if err != nil {
+			return "", fmt.Errorf("inserting part: %w", err)
+		}
+	}
+
+	return newID, nil
 }

@@ -40,6 +40,8 @@ type model struct {
 	theme            theme
 	renameID         string
 	renameInput      textinput.Model
+	forkMode         bool
+	forkSessionID    string
 	lastClickAt      time.Time
 	lastClickIx      int
 	deleting         bool
@@ -240,7 +242,22 @@ func (m *model) startRename() {
 		return
 	}
 	m.renameID = sess.ID
-	m.renameInput.SetValue(sess.Title)
+	m.renameInput.SetValue("")
+	m.renameInput.Focus()
+}
+
+func (m *model) startFork() {
+	item := m.list.SelectedItem()
+	if item == nil {
+		return
+	}
+	sess, ok := sessionFromItem(item)
+	if !ok {
+		return
+	}
+	m.forkMode = true
+	m.forkSessionID = sess.ID
+	m.renameInput.SetValue("")
 	m.renameInput.Focus()
 }
 
@@ -271,8 +288,43 @@ func (m *model) finishRename() tea.Cmd {
 	return cmd
 }
 
+func (m *model) finishFork() tea.Cmd {
+	if m.forkSessionID == "" {
+		return nil
+	}
+	title := strings.TrimSpace(m.renameInput.Value())
+	if title == "" {
+		m.forkMode = false
+		m.forkSessionID = ""
+		m.renameInput.Blur()
+		m.renameInput.SetValue("")
+		return nil
+	}
+	newID, err := forkSession(m.dbPath, m.forkSessionID, title)
+	if err != nil {
+		m.forkMode = false
+		m.forkSessionID = ""
+		m.renameInput.Blur()
+		m.renameInput.SetValue("")
+		return nil
+	}
+	m.actionID = newID
+	// Resolve directory from the original session
+	for _, s := range m.sessions {
+		if s.ID == m.forkSessionID {
+			m.actionDir = s.Directory
+			break
+		}
+	}
+	m.actionTitle = title
+	m.actionTmux = m.mode == "tmux" && m.hasTmux
+	return tea.Quit
+}
+
 func (m *model) cancelRename() {
 	m.renameID = ""
+	m.forkMode = false
+	m.forkSessionID = ""
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
 }

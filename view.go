@@ -46,7 +46,7 @@ func (m model) View() string {
 		out = m.renderOverlay(out, m.renderDeleteBox(), m.theme.modalBg, true)
 	}
 
-	if m.renameID != "" {
+	if m.renameID != "" || m.forkMode {
 		out = m.renderOverlay(out, m.renderRenameBox(), m.theme.modalBg, true)
 	}
 
@@ -232,6 +232,8 @@ func (m model) renderFooter() string {
 		parts = append(parts, sepStyle.Render(" · ")+build("n", " new"))
 		parts = append(parts, sepStyle.Render(" · ")+build("N", " new dir"))
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-r>", " rename"))
+		parts = append(parts, sepStyle.Render(" · ")+build("y", " fork"))
+		parts = append(parts, sepStyle.Render(" · ")+build("Y", " fork name"))
 		parts = append(parts, sepStyle.Render(" · ")+build("<C-d>", " delete"))
 		left = strings.Join(parts, "")
 	}
@@ -778,13 +780,20 @@ func (m model) renderRenameBox() string {
 		Width(innerWidth).
 		Render(inputView)
 
-	body := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Set new session title")
+	badge := "Rename"
+	prompt := "Set new session title"
+	if m.forkMode {
+		badge = "Fork"
+		prompt = "Set forked session title"
+	}
+
+	body := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render(prompt)
 	if sub != "" {
 		body += "\n" + sub
 	}
 	body += "\n\n" + field
 
-	return m.renderModalBox(boxWidth, m.theme.accent, "Rename", m.theme.accent, body, "enter save, esc cancel")
+	return m.renderModalBox(boxWidth, m.theme.accent, badge, m.theme.accent, body, "enter save, esc cancel")
 }
 
 func (m model) renderDirpickerModal() string {
