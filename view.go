@@ -737,6 +737,7 @@ func (m model) renderDeleteBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
+		Background(m.theme.modalBg).
 		Width(width - 6).
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width-6))
@@ -758,8 +759,8 @@ func (m model) renderDeletingBox() string {
 	}
 
 	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Deleting..."))
-	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Deleting..."))
+	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, "")
 }
@@ -781,6 +782,7 @@ func (m model) renderConfirmNewSessionBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
+		Background(m.theme.modalBg).
 		Width(width - 6).
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width-6))
@@ -809,6 +811,7 @@ func (m model) renderConfirmForkBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
+		Background(m.theme.modalBg).
 		Width(width - 6).
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width-6))
@@ -830,8 +833,8 @@ func (m model) renderForkingBox() string {
 	}
 
 	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Duplicating..."))
-	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Duplicating..."))
+	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, "")
 }
@@ -853,6 +856,7 @@ func (m model) renderConfirmCloseTmuxBox() string {
 	body := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(m.theme.modalPromptFg).
+		Background(m.theme.modalBg).
 		Width(width - 6).
 		Align(lipgloss.Left).
 		Render(wrapText(prompt, width-6))
@@ -874,8 +878,8 @@ func (m model) renderClosingTmuxBox() string {
 	}
 
 	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render("Closing window..."))
-	body = lipgloss.NewStyle().Width(width - 6).Align(lipgloss.Center).Render(body)
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Closing window..."))
+	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
 
 	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, "")
 }
@@ -1001,7 +1005,7 @@ func (m model) renderRenameBox() string {
 
 	sub := ""
 	if title != "" {
-		sub = lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(truncate.StringWithTail(title, uint(innerWidth), "..."))
+		sub = lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(m.theme.modalBg).Render(truncate.StringWithTail(title, uint(innerWidth), "..."))
 	}
 
 	input := m.renameInput
@@ -1022,7 +1026,7 @@ func (m model) renderRenameBox() string {
 		prompt = "Set forked session title"
 	}
 
-	body := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Render(prompt)
+	body := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render(prompt)
 	if sub != "" {
 		body += "\n" + sub
 	}
