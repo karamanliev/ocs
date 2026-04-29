@@ -63,10 +63,7 @@ func newSessionDelegate(t theme) *sessionDelegate {
 }
 
 func (d *sessionDelegate) updateWidths(totalWidth int) {
-	d.width = totalWidth
-	if d.width < 30 {
-		d.width = 30
-	}
+	d.width = max(totalWidth, 30)
 	padding := 5
 	if d.showCheckbox {
 		padding = 6
@@ -79,10 +76,7 @@ func (d *sessionDelegate) updateWidths(totalWidth int) {
 	} else {
 		d.checkboxW = 0
 	}
-	remain := content - d.timeW - d.indicatorW - d.checkboxW
-	if remain < 20 {
-		remain = 20
-	}
+	remain := max(content-d.timeW-d.indicatorW-d.checkboxW, 20)
 	if d.grouped {
 		d.titleW = remain
 		d.dirW = 0
@@ -112,146 +106,131 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	if !ok {
 		return
 	}
-	isCursor := index == m.Index()
 
 	updated := time.Unix(i.session.Updated/1000, (i.session.Updated%1000)*1e6)
-	dura := time.Since(updated)
-	timeText := formatDuration(dura)
+	timeText := formatDuration(time.Since(updated))
 
-	checkboxText := ""
-	if i.showCheckbox {
-		checkboxText = "[ ]"
-		if i.isSelected {
-			checkboxText = "[x]"
-		}
+	if index == m.Index() {
+		d.renderCursor(w, m, i, timeText)
+		return
 	}
+	d.renderItem(w, m, i, timeText)
+}
 
-	indicatorText := " "
-	switch i.state {
-	case stateRunning:
-		indicatorText = "●"
-	case stateActive:
-		indicatorText = "○"
-	}
-
-	titleWidth := d.titleW
+func (d *sessionDelegate) formattedTitle(i sessionItem, filter string, cursor bool) string {
+	titleW := d.titleW
 	if d.grouped {
-		titleWidth -= 2
-		if titleWidth < 8 {
-			titleWidth = 8
-		}
+		titleW -= 2
 	}
-	titleText := truncate.StringWithTail(i.session.Title, uint(titleWidth), "…")
+	titleText := groupedPrefix(truncate.StringWithTail(i.session.Title, uint(max(titleW, 8)), "…"), d.grouped)
+	if cursor {
+		return padRight(highlightSubstring(titleText, filter, d.theme.filterMatch), d.titleW)
+	}
+	if filter != "" {
+		return padRight(highlightSubstringStyled(titleText, filter, d.theme.textMain, d.theme.filterMatch), d.titleW)
+	}
+	return lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
+}
 
-	prefix := "  "
+func (d *sessionDelegate) formattedDir(sess Session, filter string, cursor bool) string {
+	if d.grouped {
+		return ""
+	}
+	pathText := displayPath(sess.Directory)
+	arrow := ""
+	if isWorktree(sess.Directory, sess.Worktree) {
+		arrow = lipgloss.NewStyle().Foreground(d.theme.indicatorRunning).Render(" ↗")
+	}
+	if cursor {
+		return padRight(highlightSubstring(pathText, filter, d.theme.filterMatch)+arrow, d.dirW)
+	}
+	if filter != "" {
+		return padRight(highlightSubstringStyled(pathText, filter, d.theme.dim, d.theme.filterMatch)+arrow, d.dirW)
+	}
+	if arrow != "" {
+		return padRight(lipgloss.NewStyle().Foreground(d.theme.dim).Render(pathText)+arrow, d.dirW)
+	}
+	return lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(pathText)
+}
 
+func (d *sessionDelegate) renderCursor(w io.Writer, m list.Model, i sessionItem, timeText string) {
 	filterText := ""
 	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
 		filterText = m.FilterInput.Value()
 	}
 
-	if isCursor {
-		if d.grouped {
-			titleText = "  " + titleText
-		}
-		hTitle := padRight(highlightSubstring(titleText, filterText, d.theme.filterMatch), d.titleW)
-		hDir := ""
-		if !d.grouped {
-			pathText := displayPath(i.session.Directory)
-			if isWorktree(i.session.Directory, i.session.Worktree) {
-				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
-				hDir = padRight(highlightSubstring(pathText, filterText, d.theme.filterMatch)+arrowStyle.Render(" ↗"), d.dirW)
-			} else {
-				hDir = padRight(highlightSubstring(pathText, filterText, d.theme.filterMatch), d.dirW)
-			}
-		}
-
-		parts := []string{
-			prefix,
-			padRight(timeText, d.timeW) + " ",
-		}
-		if d.showCheckbox {
-			parts = append(parts, padRight(checkboxText, d.checkboxW)+" ")
-		}
-		parts = append(parts,
-			padRight(indicatorText, d.indicatorW)+" ",
-			hTitle,
-		)
-		if !d.grouped {
-			parts = append(parts, " ", hDir)
-		}
-
-		line := strings.Join(parts, "")
-		vis := lipgloss.Width(line)
-		if vis < d.width {
-			line += strings.Repeat(" ", d.width-vis)
-		}
-		line = lipgloss.NewStyle().Background(d.theme.cursorBg(d.mode)).Bold(true).Render(line)
-		fmt.Fprint(w, line)
-		return
-	}
-
-	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
-	indicatorColor := d.theme.indicatorActive
-	if i.state == stateRunning {
-		indicatorColor = d.theme.indicatorRunning
-	}
-	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(indicatorColor).Render(indicatorText)
-
-	var titleStr, dirStr string
-	if filterText != "" {
-		if d.grouped {
-			titleText = "  " + titleText
-		}
-		titleStr = padRight(highlightSubstringStyled(titleText, filterText, d.theme.textMain, d.theme.filterMatch), d.titleW)
-		if !d.grouped {
-			pathText := displayPath(i.session.Directory)
-			if isWorktree(i.session.Directory, i.session.Worktree) {
-				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
-				dirStr = padRight(highlightSubstringStyled(pathText, filterText, d.theme.dim, d.theme.filterMatch)+arrowStyle.Render(" ↗"), d.dirW)
-			} else {
-				dirStr = padRight(highlightSubstringStyled(pathText, filterText, d.theme.dim, d.theme.filterMatch), d.dirW)
-			}
-		}
-	} else {
-		if d.grouped {
-			titleText = "  " + titleText
-		}
-		titleStr = lipgloss.NewStyle().Width(d.titleW).Foreground(d.theme.textMain).Render(titleText)
-		if !d.grouped {
-			pathText := displayPath(i.session.Directory)
-			if isWorktree(i.session.Directory, i.session.Worktree) {
-				arrowStyle := lipgloss.NewStyle().Foreground(d.theme.indicatorRunning)
-				dirStr = padRight(lipgloss.NewStyle().Foreground(d.theme.dim).Render(pathText)+arrowStyle.Render(" ↗"), d.dirW)
-			} else {
-				dirStr = lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(pathText)
-			}
+	checkbox := ""
+	if i.showCheckbox {
+		checkbox = "[ ]"
+		if i.isSelected {
+			checkbox = "[x]"
 		}
 	}
 
 	parts := []string{
-		prefix,
+		"  ",
+		padRight(timeText, d.timeW) + " ",
+	}
+	if d.showCheckbox {
+		parts = append(parts, padRight(checkbox, d.checkboxW)+" ")
+	}
+	parts = append(parts,
+		padRight(indicatorForState(i.state), d.indicatorW)+" ",
+		d.formattedTitle(i, filterText, true),
+	)
+	if !d.grouped {
+		parts = append(parts, " ", d.formattedDir(i.session, filterText, true))
+	}
+
+	line := strings.Join(parts, "")
+	if vis := lipgloss.Width(line); vis < d.width {
+		line += strings.Repeat(" ", d.width-vis)
+	}
+	line = lipgloss.NewStyle().Background(d.theme.cursorBg(d.mode)).Bold(true).Render(line)
+	fmt.Fprint(w, line)
+}
+
+func (d *sessionDelegate) renderItem(w io.Writer, m list.Model, i sessionItem, timeText string) {
+	filterText := ""
+	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
+		filterText = m.FilterInput.Value()
+	}
+
+	dura := time.Since(time.Unix(i.session.Updated/1000, (i.session.Updated%1000)*1e6))
+	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
+
+	indicatorColor := d.theme.indicatorActive
+	if i.state == stateRunning {
+		indicatorColor = d.theme.indicatorRunning
+	}
+	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(indicatorColor).Render(indicatorForState(i.state))
+
+	parts := []string{
+		"  ",
 		timeStr + " ",
 	}
 	if d.showCheckbox {
-		checkboxStr := strings.Repeat(" ", d.checkboxW)
-		if checkboxText != "" {
-			checkboxStr = lipgloss.NewStyle().Width(d.checkboxW).Render(checkboxText)
+		cb := strings.Repeat(" ", d.checkboxW)
+		if i.showCheckbox {
+			text := "[ ]"
+			if i.isSelected {
+				text = "[x]"
+			}
+			cb = lipgloss.NewStyle().Width(d.checkboxW).Render(text)
 		}
-		parts = append(parts, checkboxStr+" ")
+		parts = append(parts, cb+" ")
 	}
 	parts = append(parts,
 		indicatorStr+" ",
-		titleStr,
+		d.formattedTitle(i, filterText, false),
 	)
 	if !d.grouped {
-		parts = append(parts, " ", dirStr)
+		parts = append(parts, " ", d.formattedDir(i.session, filterText, false))
 	}
 
 	line := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
-	visibleWidth := lipgloss.Width(line)
-	if visibleWidth < d.width {
-		line += strings.Repeat(" ", d.width-visibleWidth)
+	if vis := lipgloss.Width(line); vis < d.width {
+		line += strings.Repeat(" ", d.width-vis)
 	}
 	fmt.Fprint(w, line)
 }
@@ -262,29 +241,56 @@ func (d *sessionDelegate) renderGroupHeader(w io.Writer, m list.Model, index int
 	if !item.collapsed {
 		marker = "▼"
 	}
+
 	pathText := displayPath(item.path)
-	arrowText := ""
+	var arrowText string
 	if item.worktree != "" && item.path != item.worktree {
 		arrowText = "↗ "
 	}
-	label := "  " + marker + " " + pathText + " " + arrowText
-	count := "(" + strconv.Itoa(item.count) + ")"
-	line := label + count
-	line = padRight(truncate.StringWithTail(line, uint(max(1, d.width-2)), "…"), d.width)
 
 	base := lipgloss.NewStyle().Bold(true).Foreground(d.theme.dim)
 	accent := d.theme.titleColor(d.mode)
 	markStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
 	countStyle := lipgloss.NewStyle().Bold(true).Foreground(accent)
 	arrowStyle := lipgloss.NewStyle().Bold(true).Foreground(d.theme.indicatorRunning)
+
 	if isCursor {
-		base = base.Background(d.theme.cursorBg(d.mode)).Foreground(d.theme.dim)
-		markStyle = markStyle.Background(d.theme.cursorBg(d.mode))
-		countStyle = countStyle.Background(d.theme.cursorBg(d.mode))
-		arrowStyle = arrowStyle.Background(d.theme.cursorBg(d.mode))
+		bg := d.theme.cursorBg(d.mode)
+		base = base.Background(bg).Foreground(d.theme.dim)
+		markStyle = markStyle.Background(bg)
+		countStyle = countStyle.Background(bg)
+		arrowStyle = arrowStyle.Background(bg)
 	}
+
+	count := "(" + strconv.Itoa(item.count) + ")"
 	baseLine := base.Render("  ") + markStyle.Render(marker) + base.Render(" "+pathText+" ")
 	fmt.Fprint(w, baseLine+arrowStyle.Render(arrowText)+countStyle.Render(count))
+}
+
+func groupedPrefix(title string, grouped bool) string {
+	if !grouped {
+		return title
+	}
+	return "  " + title
+}
+
+func indicatorForState(st sessionState) string {
+	switch st {
+	case stateRunning:
+		return "●"
+	case stateActive:
+		return "○"
+	default:
+		return " "
+	}
+}
+
+func pathWithArrow(rendered string, isWork bool, t theme) string {
+	if !isWork {
+		return rendered
+	}
+	arrow := lipgloss.NewStyle().Foreground(t.indicatorRunning).Render(" ↗")
+	return rendered + arrow
 }
 
 func padRight(s string, width int) string {

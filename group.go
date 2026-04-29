@@ -37,7 +37,7 @@ type itemRef struct {
 }
 
 func buildGroups(sessions []Session, collapsedByPath map[string]bool) []groupInfo {
-	groups := make([]groupInfo, 0)
+	groups := make([]groupInfo, 0, len(sessions))
 	groupIndex := make(map[string]int)
 	sessionByID := make(map[string]Session, len(sessions))
 

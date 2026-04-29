@@ -200,26 +200,26 @@ func timeNowMs() int64 {
 	return time.Now().UnixMilli()
 }
 
+func queryPreviewText(db *sql.DB, sessionID, role, order string) string {
+	var text string
+	_ = db.QueryRow(fmt.Sprintf(`
+		SELECT json_extract(p.data, '$.text') FROM part p
+		JOIN message m ON m.id = p.message_id
+		WHERE m.session_id = ?
+		  AND json_extract(m.data, '$.role') = ?
+		  AND json_extract(p.data, '$.type') = 'text'
+		ORDER BY m.time_created %s, p.time_created %s
+		LIMIT 1
+	`, order, order), sessionID, role).Scan(&text)
+	return text
+}
+
 func getPreviewData(dbPath, sessionID string) previewData {
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return previewData{}
 	}
 	defer db.Close()
-
-	queryText := func(role, order string) string {
-		var text string
-		_ = db.QueryRow(fmt.Sprintf(`
-			SELECT json_extract(p.data, '$.text') FROM part p
-			JOIN message m ON m.id = p.message_id
-			WHERE m.session_id = ?
-			  AND json_extract(m.data, '$.role') = ?
-			  AND json_extract(p.data, '$.type') = 'text'
-			ORDER BY m.time_created %s, p.time_created %s
-			LIMIT 1
-		`, order, order), sessionID, role).Scan(&text)
-		return text
-	}
 
 	var modelName string
 	_ = db.QueryRow(`
@@ -233,10 +233,10 @@ func getPreviewData(dbPath, sessionID string) previewData {
 	`, sessionID).Scan(&modelName)
 
 	return previewData{
-		firstUser:      queryText("user", "ASC"),
-		firstAssistant: queryText("assistant", "ASC"),
-		lastUser:       queryText("user", "DESC"),
-		lastAssistant:  queryText("assistant", "DESC"),
+		firstUser:      queryPreviewText(db, sessionID, "user", "ASC"),
+		firstAssistant: queryPreviewText(db, sessionID, "assistant", "ASC"),
+		lastUser:       queryPreviewText(db, sessionID, "user", "DESC"),
+		lastAssistant:  queryPreviewText(db, sessionID, "assistant", "DESC"),
 		modelName:      modelName,
 	}
 }
@@ -258,7 +258,7 @@ func generateID(prefix string) string {
 }
 
 // forkSession duplicates a session (including all messages and parts) in the
-// database.  Returns the new session ID.  The title is used verbatim for the
+// database. Returns the new session ID. The title is used verbatim for the
 // forked session.
 func forkSession(dbPath, sessionID, title string) (string, error) {
 	db, err := sql.Open("sqlite", dbPath)
@@ -267,12 +267,13 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 	}
 	defer db.Close()
 
-	// Read the original session row.
 	var projectID, slug, directory, version string
 	var shareURL, permission sql.NullString
 	var summaryAdditions, summaryDeletions, summaryFiles sql.NullInt32
 	var summaryDiffs, revert sql.NullString
 	var timeCreated, timeUpdated int64
+	var discardTitle string
+
 	err = db.QueryRow(`
 		SELECT project_id, slug, directory, title, version, share_url,
 			summary_additions, summary_deletions, summary_files, summary_diffs,
@@ -280,7 +281,7 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 		FROM session
 		WHERE id = ?
 	`, sessionID).Scan(
-		&projectID, &slug, &directory, new(string), &version, &shareURL,
+		&projectID, &slug, &directory, &discardTitle, &version, &shareURL,
 		&summaryAdditions, &summaryDeletions, &summaryFiles, &summaryDiffs,
 		&revert, &permission, &timeCreated, &timeUpdated,
 	)
@@ -304,15 +305,28 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 		return "", fmt.Errorf("inserting session: %w", err)
 	}
 
-	// Copy messages.
+	msgMap, err := copyMessages(db, sessionID, newID)
+	if err != nil {
+		return "", err
+	}
+
+	if err := copyParts(db, sessionID, newID, msgMap); err != nil {
+		return "", err
+	}
+
+	return newID, nil
+}
+
+func copyMessages(db *sql.DB, oldSessionID, newSessionID string) (map[string]string, error) {
 	rows, err := db.Query(`
 		SELECT id, data, time_created, time_updated
 		FROM message
 		WHERE session_id = ?
-	`, sessionID)
+	`, oldSessionID)
 	if err != nil {
-		return "", fmt.Errorf("reading messages: %w", err)
+		return nil, fmt.Errorf("reading messages: %w", err)
 	}
+	defer rows.Close()
 
 	type msgInfo struct {
 		oldID       string
@@ -325,37 +339,43 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 	for rows.Next() {
 		var mi msgInfo
 		if err := rows.Scan(&mi.oldID, &mi.data, &mi.timeCreated, &mi.timeUpdated); err != nil {
-			rows.Close()
-			return "", err
+			return nil, err
 		}
 		mi.newID = generateID("msg_")
 		msgs = append(msgs, mi)
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	for _, mi := range msgs {
 		_, err := db.Exec(`
 			INSERT INTO message (id, session_id, data, time_created, time_updated)
 			VALUES (?, ?, ?, ?, ?)
-		`, mi.newID, newID, mi.data, mi.timeCreated, mi.timeUpdated)
+		`, mi.newID, newSessionID, mi.data, mi.timeCreated, mi.timeUpdated)
 		if err != nil {
-			return "", fmt.Errorf("inserting message: %w", err)
+			return nil, fmt.Errorf("inserting message: %w", err)
 		}
 	}
 
-	// Copy parts.
-	partRows, err := db.Query(`
+	msgMap := make(map[string]string, len(msgs))
+	for _, mi := range msgs {
+		msgMap[mi.oldID] = mi.newID
+	}
+	return msgMap, nil
+}
+
+func copyParts(db *sql.DB, oldSessionID, newSessionID string, msgMap map[string]string) error {
+	rows, err := db.Query(`
 		SELECT p.id, p.message_id, p.data, p.time_created, p.time_updated
 		FROM part p
 		JOIN message m ON m.id = p.message_id
 		WHERE m.session_id = ?
-	`, sessionID)
+	`, oldSessionID)
 	if err != nil {
-		return "", fmt.Errorf("reading parts: %w", err)
+		return fmt.Errorf("reading parts: %w", err)
 	}
+	defer rows.Close()
 
 	type partInfo struct {
 		oldID       string
@@ -366,24 +386,16 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 		timeUpdated int64
 	}
 	var parts []partInfo
-	for partRows.Next() {
+	for rows.Next() {
 		var pi partInfo
-		if err := partRows.Scan(&pi.oldID, &pi.messageID, &pi.data, &pi.timeCreated, &pi.timeUpdated); err != nil {
-			partRows.Close()
-			return "", err
+		if err := rows.Scan(&pi.oldID, &pi.messageID, &pi.data, &pi.timeCreated, &pi.timeUpdated); err != nil {
+			return err
 		}
 		pi.newID = generateID("prt_")
 		parts = append(parts, pi)
 	}
-	partRows.Close()
-	if err := partRows.Err(); err != nil {
-		return "", err
-	}
-
-	// Build a map from old message ID to new message ID.
-	msgMap := make(map[string]string, len(msgs))
-	for _, mi := range msgs {
-		msgMap[mi.oldID] = mi.newID
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
 	for _, pi := range parts {
@@ -391,11 +403,10 @@ func forkSession(dbPath, sessionID, title string) (string, error) {
 		_, err := db.Exec(`
 			INSERT INTO part (id, message_id, session_id, data, time_created, time_updated)
 			VALUES (?, ?, ?, ?, ?, ?)
-		`, pi.newID, newMsgID, newID, pi.data, pi.timeCreated, pi.timeUpdated)
+		`, pi.newID, newMsgID, newSessionID, pi.data, pi.timeCreated, pi.timeUpdated)
 		if err != nil {
-			return "", fmt.Errorf("inserting part: %w", err)
+			return fmt.Errorf("inserting part: %w", err)
 		}
 	}
-
-	return newID, nil
+	return nil
 }

@@ -100,8 +100,8 @@ func doForkCmd(dbPath, sessionID, title, dir string, useTmux bool) tea.Cmd {
 }
 
 type closeTmuxDoneMsg struct {
-	id   string
-	err  error
+	id  string
+	err error
 }
 
 func doCloseTmuxCmd(dbPath, sessionID, title string) tea.Cmd {
@@ -151,6 +151,26 @@ func needsPreview(m model) tea.Cmd {
 		return nil
 	}
 	return fetchPreview(m.dbPath, id)
+}
+
+func sessionByID(sessions []Session, id string) (Session, bool) {
+	for _, s := range sessions {
+		if s.ID == id {
+			return s, true
+		}
+	}
+	return Session{}, false
+}
+
+func dirFromItem(item any) (string, bool) {
+	switch v := item.(type) {
+	case sessionItem:
+		return v.session.Directory, true
+	case groupHeaderItem:
+		return v.path, true
+	default:
+		return "", false
+	}
 }
 
 func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string) (*model, error) {
@@ -271,12 +291,16 @@ func (m model) confirmingDelete() bool {
 	return m.confirming && m.deleteMode
 }
 
-func (m model) setAction(useTmux bool) (tea.Model, tea.Cmd) {
+func (m *model) selectedSession() (Session, bool) {
 	item := m.list.SelectedItem()
 	if item == nil {
-		return m, nil
+		return Session{}, false
 	}
-	sess, ok := sessionFromItem(item)
+	return sessionFromItem(item)
+}
+
+func (m model) setAction(useTmux bool) (tea.Model, tea.Cmd) {
+	sess, ok := m.selectedSession()
 	if !ok {
 		return m, nil
 	}
@@ -288,11 +312,7 @@ func (m model) setAction(useTmux bool) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) startRename() {
-	item := m.list.SelectedItem()
-	if item == nil {
-		return
-	}
-	sess, ok := sessionFromItem(item)
+	sess, ok := m.selectedSession()
 	if !ok {
 		return
 	}
@@ -302,11 +322,7 @@ func (m *model) startRename() {
 }
 
 func (m *model) startFork() {
-	item := m.list.SelectedItem()
-	if item == nil {
-		return
-	}
-	sess, ok := sessionFromItem(item)
+	sess, ok := m.selectedSession()
 	if !ok {
 		return
 	}
@@ -324,9 +340,7 @@ func (m *model) finishRename() tea.Cmd {
 	var cmd tea.Cmd
 	if newTitle != "" {
 		if err := renameSession(m.dbPath, m.renameID, newTitle); err != nil {
-			m.renameID = ""
-			m.renameInput.Blur()
-			m.renameInput.SetValue("")
+			m.cancelRename()
 			return nil
 		}
 		sessions, err := getSessions(m.dbPath)
@@ -337,9 +351,7 @@ func (m *model) finishRename() tea.Cmd {
 			cmd = m.rebuildItems()
 		}
 	}
-	m.renameID = ""
-	m.renameInput.Blur()
-	m.renameInput.SetValue("")
+	m.cancelRename()
 	return cmd
 }
 
@@ -349,26 +361,20 @@ func (m *model) finishFork() tea.Cmd {
 	}
 	title := strings.TrimSpace(m.renameInput.Value())
 	if title == "" {
-		m.forkMode = false
-		m.forkSessionID = ""
-		m.renameInput.Blur()
-		m.renameInput.SetValue("")
+		m.cancelRename()
 		return nil
 	}
-	// Resolve directory from the original session
-	var dir string
-	for _, s := range m.sessions {
-		if s.ID == m.forkSessionID {
-			dir = s.Directory
-			break
-		}
+	sess, ok := sessionByID(m.sessions, m.forkSessionID)
+	if !ok {
+		m.cancelRename()
+		return nil
 	}
 	m.forkMode = false
 	m.forking = true
 	useTmux := m.mode == "tmux" && m.hasTmux
 	return tea.Batch(
 		m.spinner.Tick,
-		doForkCmd(m.dbPath, m.forkSessionID, title, dir, useTmux),
+		doForkCmd(m.dbPath, m.forkSessionID, title, sess.Directory, useTmux),
 	)
 }
 
@@ -480,17 +486,15 @@ func (m model) matchingGroupPaths() map[string]struct{} {
 	}
 
 	term := m.list.FilterValue()
-	targets := make([]string, 0, len(m.sessions))
-	ordered := make([]Session, 0, len(m.sessions))
-	for _, s := range m.sessions {
-		targets = append(targets, s.Title+" "+s.Directory)
-		ordered = append(ordered, s)
+	targets := make([]string, len(m.sessions))
+	for i, s := range m.sessions {
+		targets[i] = s.Title + " " + s.Directory
 	}
 
 	matches := make(map[string]struct{})
 	for _, rank := range m.list.Filter(term, targets) {
-		if rank.Index >= 0 && rank.Index < len(ordered) {
-			matches[ordered[rank.Index].Directory] = struct{}{}
+		if rank.Index >= 0 && rank.Index < len(m.sessions) {
+			matches[m.sessions[rank.Index].Directory] = struct{}{}
 		}
 	}
 	return matches

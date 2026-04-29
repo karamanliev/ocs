@@ -72,23 +72,25 @@ func (m model) View() string {
 	return out
 }
 
+func (m model) modalWidth(preferred, min, margin int) int {
+	w := preferred
+	if m.width < margin+preferred {
+		w = m.width - margin
+	}
+	if w < min {
+		w = min
+	}
+	return w
+}
+
 func (m model) layoutMetrics() layoutMetrics {
-	width := m.width
-	if width < 20 {
-		width = 20
-	}
-	height := m.height
-	if height < 8 {
-		height = 8
-	}
+	width := max(m.width, 20)
+	height := max(m.height, 8)
 
 	layout := layoutMetrics{
 		showPreview: m.showPreview,
 		listWidth:   width,
-		listHeight:  height - 4,
-	}
-	if layout.listHeight < 5 {
-		layout.listHeight = 5
+		listHeight:  max(height-4, 5),
 	}
 	if !m.showPreview {
 		return layout
@@ -100,22 +102,14 @@ func (m model) layoutMetrics() layoutMetrics {
 	const sideThreshold = 132
 
 	if width >= sideThreshold && width >= height*2 {
-		previewW := width * 38 / 100
-		if previewW < minPreviewOuterW {
-			previewW = minPreviewOuterW
-		}
-		if previewW > width-minListOuterW-gap {
-			previewW = width - minListOuterW - gap
-		}
+		previewW := max(width*38/100, minPreviewOuterW)
+		previewW = min(previewW, width-minListOuterW-gap)
 		listW := width - previewW - gap
 		if listW >= minListOuterW && previewW >= minPreviewOuterW {
 			layout.previewSide = true
 			layout.listWidth = listW
 			layout.previewW = previewW
-			layout.previewH = height - 1
-			if layout.previewH < 6 {
-				layout.previewH = 6
-			}
+			layout.previewH = max(height-1, 6)
 			return layout
 		}
 	}
@@ -128,26 +122,14 @@ func (m model) layoutMetrics() layoutMetrics {
 		minPreviewH = 12
 		maxPreviewHLimit = 22
 	}
-	if previewH < minPreviewH {
-		previewH = minPreviewH
-	}
-	if previewH > maxPreviewHLimit {
-		previewH = maxPreviewHLimit
-	}
-	maxPreviewH := height - 10
-	if maxPreviewH < 4 {
-		maxPreviewH = 4
-	}
-	if previewH > maxPreviewH {
-		previewH = maxPreviewH
-	}
+	previewH = max(previewH, minPreviewH)
+	previewH = min(previewH, maxPreviewHLimit)
+	maxPreviewH := max(height-10, 4)
+	previewH = min(previewH, maxPreviewH)
 	listHeight := height - 4 - gap - previewH
 	if listHeight < 5 {
 		listHeight = 5
-		previewH = height - 10
-		if previewH < 4 {
-			previewH = 4
-		}
+		previewH = max(height-10, 4)
 	}
 
 	layout.listHeight = listHeight
@@ -188,11 +170,7 @@ func (m model) renderColumnHeader() string {
 }
 
 func (m model) renderFooter() string {
-	w := m.width
-	if w < 10 {
-		w = 10
-	}
-	usable := w - 2
+	usable := max(m.width, 10) - 2
 
 	keyStyle := lipgloss.NewStyle().Foreground(m.theme.footerKeyColor(m.mode))
 	labelStyle := lipgloss.NewStyle().Foreground(m.theme.footerLabel)
@@ -263,10 +241,7 @@ func (m model) renderFooter() string {
 
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(rightStyled)
-	gap := usable - leftW - rightW
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(usable-leftW-rightW, 1)
 
 	return " " + left + strings.Repeat(" ", gap) + rightStyled + " "
 }
@@ -281,16 +256,11 @@ func (m model) renderBox(content string, width int) string {
 }
 
 func (m model) renderPanel(content string, width int, height int, leftTitle string, rightTitle string, leftColor lipgloss.Color, rightColor lipgloss.Color, bg lipgloss.Color) string {
-	if width < 4 {
-		width = 4
-	}
+	width = max(width, 4)
 	innerW := width - 2
 	lines := strings.Split(content, "\n")
 	if height > 0 {
-		innerH := height - 2
-		if innerH < 0 {
-			innerH = 0
-		}
+		innerH := max(height-2, 0)
 		if len(lines) > innerH {
 			lines = lines[:innerH]
 		}
@@ -312,10 +282,7 @@ func (m model) renderPanel(content string, width int, height int, leftTitle stri
 	left := border.Render("┌")
 	right := border.Render("┐")
 
-	midW := innerW - leftW - rightW
-	if midW < 0 {
-		midW = 0
-	}
+	midW := max(innerW-leftW-rightW, 0)
 	mid := border.Render(strings.Repeat("─", midW))
 	top := left + leftStyled + mid + rightStyled + right
 
@@ -361,10 +328,7 @@ func joinHorizontalPanels(left string, right string, leftW int, rightW int) stri
 func (m model) renderOverlay(background string, box string, _ lipgloss.Color, dim bool) string {
 	boxLines := strings.Split(box, "\n")
 	boxH := len(boxLines)
-	topPad := (m.height - boxH) / 2
-	if topPad < 0 {
-		topPad = 0
-	}
+	topPad := max((m.height-boxH)/2, 0)
 
 	boxWidth := 0
 	for _, l := range boxLines {
@@ -373,14 +337,7 @@ func (m model) renderOverlay(background string, box string, _ lipgloss.Color, di
 		}
 	}
 
-	leftPad := (m.width - boxWidth) / 2
-	if leftPad < 0 {
-		leftPad = 0
-	}
-	rightPad := m.width - boxWidth - leftPad
-	if rightPad < 0 {
-		rightPad = 0
-	}
+	leftPad := max((m.width-boxWidth)/2, 0)
 
 	bgLines := strings.Split(background, "\n")
 	dimStyle := lipgloss.NewStyle().Foreground(m.theme.dim)
@@ -492,18 +449,12 @@ func truncatePreviewLines(lines []string, limit int) []string {
 
 func (m model) previewDivider(label string, contentW int, fg lipgloss.Color) string {
 	prefix := "── " + label + " "
-	dashes := contentW - len(prefix)
-	if dashes < 2 {
-		dashes = 2
-	}
+	dashes := max(contentW-len(prefix), 2)
 	return "  " + lipgloss.NewStyle().Foreground(fg).Render(prefix+strings.Repeat("─", dashes))
 }
 
 func (m model) previewScrollbarChar(lineIdx, viewH, scroll, maxScroll, totalLines int) string {
-	thumbH := viewH * viewH / totalLines
-	if thumbH < 1 {
-		thumbH = 1
-	}
+	thumbH := max(viewH*viewH/totalLines, 1)
 	thumbStart := 0
 	if maxScroll > 0 {
 		thumbStart = scroll * (viewH - thumbH) / maxScroll
@@ -579,71 +530,56 @@ func (m model) buildPreviewLines(data previewData, contentW int) []string {
 	return lines
 }
 
-func (m model) renderPreviewPane(width int, height int) string {
-	item := m.list.SelectedItem()
-
-	innerW := width - 2
-	if innerW < 10 {
-		innerW = 10
-	}
-	innerH := height - 2
-	if innerH < 2 {
-		innerH = 2
-	}
-	// Reserve 1 col for scrollbar (always, to avoid reflow when it appears)
-	contentW := innerW - 5
-	if contentW < 6 {
-		contentW = 6
-	}
-
+func (m model) previewContent(item any, contentW int) (header []string, body []string) {
 	padLeft := "  "
-	var header []string
 	header = append(header, "")
-	var bodyLines []string
-
-	var data previewData
-	loading := false
-
 	if item == nil {
 		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("No session selected."))
-	} else {
-		if sess, ok := sessionFromItem(item); ok {
-			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
-				truncate.StringWithTail(sess.Title, uint(contentW), "...")))
-			pathStr := displayPath(sess.Directory)
-			if isWorktree(sess.Directory, sess.Worktree) {
-				wtName := filepath.Base(sess.Worktree)
-				arrow := lipgloss.NewStyle().Foreground(m.theme.indicatorRunning).Render("↗")
-				pathStr += " [" + arrow + " " + wtName + "]"
-			}
-			header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
-				truncate.StringWithTail(pathStr, uint(contentW), "...")))
-			header = append(header, "")
-
-			cached, ok := m.firstMsgs[sess.ID]
-			if !ok {
-				loading = true
-			} else {
-				data = cached
-			}
-		} else if groupHeader, ok := item.(groupHeaderItem); ok {
-			header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
-				truncate.StringWithTail(displayPath(groupHeader.path), uint(contentW), "...")))
-			header = append(header, "")
-			bodyLines = append(bodyLines,
-				padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(fmt.Sprintf("%d sessions in group", groupHeader.count)),
-				"",
-				padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Press space to fold or unfold."),
-			)
+		return
+	}
+	if sess, ok := sessionFromItem(item); ok {
+		header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
+			truncate.StringWithTail(sess.Title, uint(contentW), "...")))
+		pathStr := displayPath(sess.Directory)
+		if isWorktree(sess.Directory, sess.Worktree) {
+			wtName := filepath.Base(sess.Worktree)
+			arrow := lipgloss.NewStyle().Foreground(m.theme.indicatorRunning).Render("↗")
+			pathStr += " [" + arrow + " " + wtName + "]"
 		}
-	}
-	if loading {
-		bodyLines = append(bodyLines, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Loading..."))
-	} else if item != nil && len(bodyLines) == 0 {
-		bodyLines = m.buildPreviewLines(data, contentW)
-	}
+		header = append(header, padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(
+			truncate.StringWithTail(pathStr, uint(contentW), "...")))
+		header = append(header, "")
 
-	allLines := append(header, bodyLines...)
+		cached, ok := m.firstMsgs[sess.ID]
+		if !ok {
+			body = append(body, padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Loading..."))
+			return
+		}
+		body = m.buildPreviewLines(cached, contentW)
+		return
+	}
+	if groupHeader, ok := item.(groupHeaderItem); ok {
+		header = append(header, padLeft+lipgloss.NewStyle().Bold(true).Foreground(m.theme.previewTitleFg).Render(
+			truncate.StringWithTail(displayPath(groupHeader.path), uint(contentW), "...")))
+		header = append(header, "")
+		body = append(body,
+			padLeft+lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Render(fmt.Sprintf("%d sessions in group", groupHeader.count)),
+			"",
+			padLeft+lipgloss.NewStyle().Foreground(m.theme.dim).Render("Press space to fold or unfold."),
+		)
+		return
+	}
+	return
+}
+
+func (m model) renderPreviewPane(width int, height int) string {
+	innerW := max(width-2, 10)
+	innerH := max(height-2, 2)
+	// Reserve 1 col for scrollbar (always, to avoid reflow when it appears)
+	contentW := max(innerW-5, 6)
+
+	header, body := m.previewContent(m.list.SelectedItem(), contentW)
+	allLines := append(header, body...)
 
 	// Scroll logic
 	totalLines := len(allLines)
@@ -652,13 +588,8 @@ func (m model) renderPreviewPane(width int, height int) string {
 	if canScroll {
 		maxScroll = totalLines - innerH
 	}
-	scroll := m.previewScroll
-	if scroll < 0 {
-		scroll = 0
-	}
-	if scroll > maxScroll {
-		scroll = maxScroll
-	}
+	scroll := max(m.previewScroll, 0)
+	scroll = min(scroll, maxScroll)
 
 	// Pad to at least innerH
 	for len(allLines) < innerH {
@@ -717,6 +648,32 @@ func (m model) inPreviewBody(x, y int) bool {
 		y >= previewTop && y < previewTop+layout.previewH-1
 }
 
+func (m model) renderConfirmBox(badge string, borderColor lipgloss.Color, prompt string) string {
+	width := m.modalWidth(48, 30, 16)
+	body := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalPromptFg).
+		Background(m.theme.modalBg).
+		Width(width - 6).
+		Align(lipgloss.Left).
+		Render(wrapText(prompt, width-6))
+
+	hint := m.buildHint([]hintPart{
+		{"y", " confirm"},
+		{"n", " cancel"},
+	})
+	return m.renderModalBox(width, borderColor, badge, borderColor, body, hint)
+}
+
+func (m model) renderSpinnerBox(badge string, borderColor lipgloss.Color, label string) string {
+	width := m.modalWidth(48, 30, 16)
+	spin := m.spinner.View()
+	text := lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render(label)
+	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", text)
+	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
+	return m.renderModalBox(width, borderColor, badge, borderColor, body, "")
+}
+
 func (m model) renderDeleteBox() string {
 	var prompt string
 	if len(m.selected) > 0 {
@@ -729,47 +686,13 @@ func (m model) renderDeleteBox() string {
 		}
 		if prompt == "" {
 			prompt = "Delete session?"
-		} else {
 		}
 	}
-
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	body := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.modalPromptFg).
-		Background(m.theme.modalBg).
-		Width(width - 6).
-		Align(lipgloss.Left).
-		Render(wrapText(prompt, width-6))
-
-	hint := m.buildHint([]hintPart{
-		{"y", " confirm"},
-		{"n", " cancel"},
-	})
-	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, hint)
+	return m.renderConfirmBox("Delete", m.theme.modalBorder, prompt)
 }
 
 func (m model) renderDeletingBox() string {
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Deleting..."))
-	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
-
-	return m.renderModalBox(width, m.theme.modalBorder, "Delete", m.theme.modalBorder, body, "")
+	return m.renderSpinnerBox("Delete", m.theme.modalBorder, "Deleting...")
 }
 
 func (m model) renderConfirmNewSessionBox() string {
@@ -777,28 +700,7 @@ func (m model) renderConfirmNewSessionBox() string {
 	if m.pendingNewSessionDir != "" {
 		prompt = fmt.Sprintf("Create new session in %s?", m.pendingNewSessionDir)
 	}
-
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	body := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.modalPromptFg).
-		Background(m.theme.modalBg).
-		Width(width - 6).
-		Align(lipgloss.Left).
-		Render(wrapText(prompt, width-6))
-
-	hint := m.buildHint([]hintPart{
-		{"y", " confirm"},
-		{"n", " cancel"},
-	})
-	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
+	return m.renderConfirmBox("New Session", m.theme.accent, prompt)
 }
 
 func (m model) renderConfirmForkBox() string {
@@ -806,44 +708,11 @@ func (m model) renderConfirmForkBox() string {
 	if m.pendingForkTitle != "" {
 		prompt = fmt.Sprintf("Duplicate \"%s\"?", m.pendingForkTitle)
 	}
-
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	body := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.modalPromptFg).
-		Background(m.theme.modalBg).
-		Width(width - 6).
-		Align(lipgloss.Left).
-		Render(wrapText(prompt, width-6))
-
-	hint := m.buildHint([]hintPart{
-		{"y", " confirm"},
-		{"n", " cancel"},
-	})
-	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, hint)
+	return m.renderConfirmBox("Fork", m.theme.accent, prompt)
 }
 
 func (m model) renderForkingBox() string {
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Duplicating..."))
-	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
-
-	return m.renderModalBox(width, m.theme.accent, "Fork", m.theme.accent, body, "")
+	return m.renderSpinnerBox("Fork", m.theme.accent, "Duplicating...")
 }
 
 func (m model) renderConfirmCloseTmuxBox() string {
@@ -851,54 +720,15 @@ func (m model) renderConfirmCloseTmuxBox() string {
 	if m.closeTmuxTitle != "" {
 		prompt = fmt.Sprintf("Close tmux window for \"%s\"?", m.closeTmuxTitle)
 	}
-
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	body := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(m.theme.modalPromptFg).
-		Background(m.theme.modalBg).
-		Width(width - 6).
-		Align(lipgloss.Left).
-		Render(wrapText(prompt, width-6))
-
-	hint := m.buildHint([]hintPart{
-		{"y", " confirm"},
-		{"n", " cancel"},
-	})
-	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, hint)
+	return m.renderConfirmBox("Close", m.theme.accent, prompt)
 }
 
 func (m model) renderClosingTmuxBox() string {
-	width := 48
-	if m.width < 64 {
-		width = m.width - 16
-	}
-	if width < 30 {
-		width = 30
-	}
-
-	spin := m.spinner.View()
-	body := lipgloss.JoinHorizontal(lipgloss.Center, spin, "  ", lipgloss.NewStyle().Bold(true).Foreground(m.theme.modalPromptFg).Background(m.theme.modalBg).Render("Closing window..."))
-	body = lipgloss.NewStyle().Background(m.theme.modalBg).Width(width - 6).Align(lipgloss.Center).Render(body)
-
-	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, "")
+	return m.renderSpinnerBox("Close", m.theme.accent, "Closing window...")
 }
 
 func (m model) renderKeybindsBox() string {
-	width := 52
-	if m.width < 68 {
-		width = m.width - 16
-	}
-	if width < 40 {
-		width = 40
-	}
+	width := m.modalWidth(52, 40, 16)
 
 	// inner width after border(2) + horizontal padding(4)
 	innerW := width - 6
@@ -941,24 +771,12 @@ func (m model) renderKeybindsBox() string {
 	}
 
 	// Modal at 80% of terminal height
-	modalMaxH := m.height * 80 / 100
-	if modalMaxH < 10 {
-		modalMaxH = 10
-	}
+	modalMaxH := max(m.height*80/100, 10)
 	// chrome = border(2) + pad(2) + badge(1) + hint(1) + blank spacer(2) = 8
 	const chrome = 8
-	maxBodyLines := modalMaxH - chrome
-	if maxBodyLines < 4 {
-		maxBodyLines = 4
-	}
+	maxBodyLines := max(modalMaxH-chrome, 4)
 
-	scroll := m.keybindsScroll
-	if scroll > len(bodyLines)-maxBodyLines {
-		scroll = len(bodyLines) - maxBodyLines
-	}
-	if scroll < 0 {
-		scroll = 0
-	}
+	scroll := max(0, min(m.keybindsScroll, len(bodyLines)-maxBodyLines))
 	if len(bodyLines) > maxBodyLines {
 		bodyLines = bodyLines[scroll : scroll+maxBodyLines]
 	}
@@ -1001,13 +819,7 @@ func (m model) renderRenameBox() string {
 		}
 	}
 
-	boxWidth := 54
-	if m.width < 70 {
-		boxWidth = m.width - 14
-	}
-	if boxWidth < 34 {
-		boxWidth = 34
-	}
+	boxWidth := m.modalWidth(54, 34, 14)
 	innerWidth := boxWidth - 8
 
 	sub := ""
@@ -1066,73 +878,47 @@ func (m model) renderDirpickerModal() string {
 }
 
 func (m model) dirpickerHeight() int {
-	h := m.height * 4 / 5
-	if h < 12 {
-		h = 12
-	}
-	if h > 26 {
-		h = 26
-	}
-	return h
+	return min(max(m.height*4/5, 12), 26)
 }
 
 func (m model) dirpickerWidth() int {
-	w := m.width * 3 / 5
-	if w < 44 {
-		w = 44
-	}
-	if w > 80 {
-		w = 80
-	}
-	return w
+	return min(max(m.width*3/5, 44), 80)
 }
 
 func wrapText(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
-	var result []string
-	var line []rune
-	var lineLen int
-
-	for _, r := range s {
-		if r == '\n' {
-			result = append(result, string(line))
-			line = nil
-			lineLen = 0
-			continue
-		}
-		if lineLen >= width && r == ' ' {
-			result = append(result, string(line))
-			line = nil
-			lineLen = 0
-			continue
-		}
-		if lineLen >= width {
-			lastSpace := -1
-			for i := len(line) - 1; i >= 0; i-- {
-				if line[i] == ' ' {
-					lastSpace = i
-					break
+	var lines []string
+	for _, para := range strings.Split(s, "\n") {
+		var line []rune
+		var lineLen int
+		for _, word := range strings.Fields(para) {
+			wordRunes := []rune(word)
+			wordLen := len(wordRunes)
+			if lineLen > 0 {
+				if lineLen+1+wordLen > width {
+					lines = append(lines, string(line))
+					line = nil
+					lineLen = 0
+				} else {
+					line = append(line, ' ')
+					lineLen++
 				}
 			}
-			if lastSpace > 0 {
-				result = append(result, string(line[:lastSpace]))
-				line = line[lastSpace+1:]
-				lineLen = len(line)
-			} else {
-				result = append(result, string(line))
-				line = nil
-				lineLen = 0
+			for wordLen > width {
+				lines = append(lines, string(wordRunes[:width]))
+				wordRunes = wordRunes[width:]
+				wordLen = len(wordRunes)
 			}
+			line = append(line, wordRunes...)
+			lineLen += wordLen
 		}
-		line = append(line, r)
-		lineLen++
+		if lineLen > 0 {
+			lines = append(lines, string(line))
+		}
 	}
-	if len(line) > 0 {
-		result = append(result, string(line))
-	}
-	return strings.Join(result, "\n")
+	return strings.Join(lines, "\n")
 }
 
 func keybindsEntries() []struct{ key, desc string } {
