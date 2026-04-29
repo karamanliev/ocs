@@ -52,6 +52,7 @@ ocs --theme dark    # force dark theme (light also available)
 
 | Key | Action |
 | --- | --- |
+| `?` | Show keybinds help |
 | `enter` | Open selected session, mode dependent: ALL resumes, TMUX opens in tmux; group headers do nothing |
 | `alt+enter`, `ctrl+o` | Open in tmux when in ALL mode, resume when in TMUX mode |
 | `t` | Toggle ALL and TMUX mode |
@@ -128,7 +129,7 @@ This means you can open `ocs` from any tmux window, pick a session, and end up e
   - [x] `x` closes the window of the currently running/active tmux session. Refreshes the list to update the indicator. Works only in tmux mode.
   - [x] `n` creates a new session in the path of the currently selected item/group and let the agent name it. `N` lets the user choose the filepath of the session. If in tmux mode also attaches/creates a tmux session in that path.
   - [x] `y` duplicates the currently selected session in the path of the currently selected item with a `#DUP {oldTitle}` name. `Y` lets the user manually name the duplicated session.
-- [ ] Add a popup with the keybinds, list only the most commonly used ones in the footer
+- [x] Add a popup with the keybinds, list only the most commonly used ones in the footer
 - [ ] Add configurable keybinds, maybe a toml/json config file in `~/.config/ocs/config.{toml,json}`
 - [ ] Rework CLI flags (add more options, add `true/false` to already existing flags, etc)
 - [ ] Add sorting by different criteria to the session list

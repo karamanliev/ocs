@@ -9,7 +9,8 @@ import (
 type appState int
 
 const (
-	stateNormal appState = iota
+	stateShowKeybinds appState = iota
+	stateNormal
 	stateRenaming
 	stateFilepicker
 	stateConfirmingDelete
@@ -23,6 +24,8 @@ const (
 
 func (m model) appState() appState {
 	switch {
+	case m.keybindsOpen:
+		return stateShowKeybinds
 	case m.renameID != "" || m.forkMode:
 		return stateRenaming
 	case m.dirpickerOpen:
@@ -48,6 +51,8 @@ func (m model) appState() appState {
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.appState() {
+	case stateShowKeybinds:
+		return m.handleKeybindsKeys(msg)
 	case stateRenaming:
 		return m.handleRenameKeys(msg)
 	case stateFilepicker:
@@ -173,6 +178,40 @@ func (m model) handleConfirmCloseTmuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) handleKeybindsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	modalMaxH := m.height * 80 / 100
+	if modalMaxH < 10 {
+		modalMaxH = 10
+	}
+	const chrome = 8
+	maxBodyLines := modalMaxH - chrome
+	if maxBodyLines < 4 {
+		maxBodyLines = 4
+	}
+	maxScroll := len(keybindsEntries()) - maxBodyLines
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+
+	switch msg.String() {
+	case "esc", "?", "q":
+		m.keybindsOpen = false
+		m.keybindsScroll = 0
+		return m, nil
+	case "j", "down":
+		if m.keybindsScroll < maxScroll {
+			m.keybindsScroll++
+		}
+		return m, nil
+	case "k", "up":
+		if m.keybindsScroll > 0 {
+			m.keybindsScroll--
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
 func (m model) handleDirpickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
@@ -265,6 +304,10 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selected = make(map[string]struct{})
 			cmd := m.rebuildItems()
 			return m, cmd
+		case "?":
+			m.keybindsOpen = true
+			m.keybindsScroll = 0
+			return m, nil
 		case " ":
 			if item := m.list.SelectedItem(); item != nil {
 				sess, ok := sessionFromItem(item)
@@ -296,6 +339,10 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "?":
+			m.keybindsOpen = true
+			m.keybindsScroll = 0
+			return m, nil
 		case "shift+down", "J":
 			if m.showPreview && m.previewScroll < m.previewScrollMax {
 				m.previewScroll += 18

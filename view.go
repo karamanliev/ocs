@@ -64,6 +64,10 @@ func (m model) View() string {
 		out = m.renderOverlay(out, m.renderDirpickerModal(), m.theme.modalBg, true)
 	}
 
+	if m.keybindsOpen {
+		out = m.renderOverlay(out, m.renderKeybindsBox(), m.theme.modalBg, true)
+	}
+
 	return out
 }
 
@@ -213,41 +217,20 @@ func (m model) renderFooter() string {
 	} else {
 		var parts []string
 		parts = append(parts, build("/", " filter"))
-		crLabel := " resume"
-		mcrLabel := ""
-		if m.mode == "tmux" {
-			crLabel = " resume tmux"
-			if m.hasTmux {
-				mcrLabel = " resume"
-			}
-		} else if m.hasTmux {
-			mcrLabel = " resume tmux"
-		}
-		parts = append(parts, sepStyle.Render(" · ")+build("<CR>", crLabel))
-		if mcrLabel != "" {
-			parts = append(parts, sepStyle.Render(" · ")+build("<M-CR>", mcrLabel))
-		}
+		parts = append(parts, sepStyle.Render(" · ")+build("<CR>", " open"))
 		if m.hasTmux {
-			toggleLabel := " toggle tmux"
+			toggleLabel := " tmux"
 			if m.mode == "tmux" {
-				toggleLabel = " toggle all"
+				toggleLabel = " normal"
 			}
 			parts = append(parts, sepStyle.Render(" · ")+build("t", toggleLabel))
 		}
-		parts = append(parts, sepStyle.Render(" · ")+build("g", " group"))
+		groupLabel := " group"
 		if m.grouped {
-			parts = append(parts, sepStyle.Render(" · ")+build("space", " fold"))
-			parts = append(parts, sepStyle.Render(" · ")+build("<C-space>", " all"))
+			groupLabel = " ungroup"
 		}
-		parts = append(parts, sepStyle.Render(" · ")+build("n", " new"))
-		parts = append(parts, sepStyle.Render(" · ")+build("N", " new dir"))
-		parts = append(parts, sepStyle.Render(" · ")+build("r", " rename"))
-		parts = append(parts, sepStyle.Render(" · ")+build("y", " fork"))
-		parts = append(parts, sepStyle.Render(" · ")+build("Y", " fork name"))
-		if m.hasTmux && m.mode == "tmux" {
-			parts = append(parts, sepStyle.Render(" · ")+build("x", " close"))
-		}
-		parts = append(parts, sepStyle.Render(" · ")+build("d", " delete"))
+		parts = append(parts, sepStyle.Render(" · ")+build("g", groupLabel))
+		parts = append(parts, sepStyle.Render(" · ")+build("?", " keys"))
 		left = strings.Join(parts, "")
 	}
 
@@ -439,11 +422,13 @@ func (m model) renderModalBox(width int, borderColor lipgloss.Color, badge strin
 
 	bodyView := lipgloss.NewStyle().
 		Foreground(m.theme.textMain).
+		Background(m.theme.modalBg).
 		Width(width).
 		Render(body)
 
 	hintView := lipgloss.NewStyle().
 		Foreground(m.theme.modalHintFg).
+		Background(m.theme.modalBg).
 		Render(hint)
 
 	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
@@ -866,6 +851,105 @@ func (m model) renderClosingTmuxBox() string {
 	return m.renderModalBox(width, m.theme.accent, "Close", m.theme.accent, body, "")
 }
 
+func (m model) renderKeybindsBox() string {
+	width := 52
+	if m.width < 68 {
+		width = m.width - 16
+	}
+	if width < 40 {
+		width = 40
+	}
+
+	// inner width after border(2) + horizontal padding(4)
+	innerW := width - 6
+	keyColW := 14
+	sepW := 1
+	descMaxW := innerW - keyColW - sepW
+	if descMaxW < 10 {
+		descMaxW = 10
+	}
+
+	bg := m.theme.modalBg
+	keyStyle := lipgloss.NewStyle().Bold(true).Foreground(m.theme.accent).Background(bg).Width(keyColW)
+	descStyle := lipgloss.NewStyle().Foreground(m.theme.modalPromptFg).Background(bg)
+	sepStyle := lipgloss.NewStyle().Foreground(m.theme.textMuted).Background(bg)
+	hintStyle := lipgloss.NewStyle().Foreground(m.theme.modalHintFg).Background(bg)
+
+	entries := keybindsEntries()
+
+	var bodyLines []string
+	for _, e := range entries {
+		if e.key == "" && e.desc == "" {
+			bodyLines = append(bodyLines, "")
+			continue
+		}
+		if e.key == "" {
+			bodyLines = append(bodyLines, sepStyle.Render(e.desc))
+			continue
+		}
+		keyStr := e.key
+		if len(keyStr) > keyColW {
+			keyStr = keyStr[:keyColW]
+		}
+		descStr := e.desc
+		if len(descStr) > descMaxW {
+			descStr = descStr[:descMaxW-3] + "..."
+		}
+
+		keyBlock := keyStyle.Render(keyStr)
+		line := keyBlock + descStyle.Render(" " + descStr)
+		bodyLines = append(bodyLines, line)
+	}
+
+	// Modal at 80% of terminal height
+	modalMaxH := m.height * 80 / 100
+	if modalMaxH < 10 {
+		modalMaxH = 10
+	}
+	// chrome = border(2) + pad(2) + badge(1) + hint(1) + blank spacer(2) = 8
+	const chrome = 8
+	maxBodyLines := modalMaxH - chrome
+	if maxBodyLines < 4 {
+		maxBodyLines = 4
+	}
+
+	scroll := m.keybindsScroll
+	if scroll > len(bodyLines)-maxBodyLines {
+		scroll = len(bodyLines) - maxBodyLines
+	}
+	if scroll < 0 {
+		scroll = 0
+	}
+	if len(bodyLines) > maxBodyLines {
+		bodyLines = bodyLines[scroll : scroll+maxBodyLines]
+	}
+
+	badgeView := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(m.theme.modalBg).
+		Background(m.theme.accent).
+		Padding(0, 1).
+		Render("KEYS")
+
+	bodyStr := strings.Join(bodyLines, "\n")
+	bodyView := lipgloss.NewStyle().
+		Foreground(m.theme.textMain).
+		Background(bg).
+		Render(bodyStr)
+
+	hintView := hintStyle.Render("j/k scroll, esc/q/? close")
+
+	content := badgeView + "\n\n" + bodyView + "\n\n" + hintView
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(m.theme.accent).
+		Background(bg).
+		Padding(1, 2).
+		Width(width).
+		Render(content)
+}
+
 func (m model) renderRenameBox() string {
 	item := m.list.SelectedItem()
 	var title string
@@ -1012,4 +1096,44 @@ func wrapText(s string, width int) string {
 		result = append(result, string(line))
 	}
 	return strings.Join(result, "\n")
+}
+
+func keybindsEntries() []struct{ key, desc string } {
+	return []struct{ key, desc string }{
+		{"/", "Filter"},
+		{"<CR>", "Open session"},
+		{"<M-CR>", "Open alternate mode"},
+		{"t", "Toggle mode"},
+		{"g", "Toggle groups"},
+		{"space", "Fold/unfold group"},
+		{"<C-space>", "Fold/unfold all groups"},
+		{"h / l", "Collapse / expand group"},
+		{"[ / ]", "Prev / next group"},
+		{"n", "New session"},
+		{"N", "New session (pick dir)"},
+		{"r", "Rename"},
+		{"y", "Duplicate session"},
+		{"Y", "Duplicate (custom name)"},
+		{"x", "Close tmux window (tmux only)"},
+		{"d", "Delete mode"},
+		{"tab", "Toggle preview"},
+		{"J / K", "Scroll preview"},
+		{"<C-n/p>", "Navigate lists"},
+		{"q", "Quit"},
+		{"?", "Keys"},
+		{"", ""},
+		{"", "--- delete mode ---"},
+		{"space", "Toggle selection"},
+		{"enter", "Confirm delete"},
+		{"esc", "Cancel"},
+		{"", ""},
+		{"", "--- dir picker ---"},
+		{"j / k", "Navigate"},
+		{"h / l", "Parent / child directory"},
+		{".", "Toggle hidden"},
+		{"/", "Filter directories"},
+		{"enter", "Select directory"},
+		{"esc", "Back / close"},
+		{"q", "Close"},
+	}
 }

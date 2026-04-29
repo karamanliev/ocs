@@ -63,6 +63,8 @@ type model struct {
 	pendingSelectRef *itemRef
 	dirpicker        dirpicker
 	dirpickerOpen    bool
+	keybindsOpen     bool
+	keybindsScroll   int
 }
 
 type deleteDoneMsg struct{}
@@ -385,6 +387,8 @@ func (m *model) cancelRename() {
 	m.closingTmux = false
 	m.closeTmuxSessionID = ""
 	m.closeTmuxTitle = ""
+	m.keybindsOpen = false
+	m.keybindsScroll = 0
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
 }
