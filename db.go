@@ -47,9 +47,8 @@ func getSessions(dbPath string) ([]Session, error) {
 	defer db.Close()
 
 	rows, err := db.Query(`
-		SELECT s.id, s.title, s.time_updated, p.worktree
+		SELECT s.id, s.title, s.time_updated, s.directory
 		FROM session s
-		JOIN project p ON p.id = s.project_id
 		WHERE s.parent_id IS NULL
 		ORDER BY s.time_updated DESC
 	`)
