@@ -61,7 +61,13 @@ type deleteDoneMsg struct{}
 
 func doDeleteCmd(agentPath string, ids []string) tea.Cmd {
 	return func() tea.Msg {
+		tmuxPath, _ := exec.LookPath("tmux")
 		for _, id := range ids {
+			if tmuxPath != "" {
+				if sessName, winIdx, found := findTmuxWindow(tmuxPath, id); found {
+					_ = killTmuxWindow(tmuxPath, sessName, winIdx)
+				}
+			}
 			deleteSession(agentPath, id)
 		}
 		return deleteDoneMsg{}
