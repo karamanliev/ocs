@@ -11,7 +11,9 @@ type appState int
 const (
 	stateShowKeybinds appState = iota
 	stateNormal
-	stateRenaming
+	stateDeleteMode
+	stateRenameInput
+	stateForkInput
 	stateFilepicker
 	stateConfirmingDelete
 	stateDeleting
@@ -23,40 +25,19 @@ const (
 )
 
 func (m model) appState() appState {
-	switch {
-	case m.keybindsOpen:
-		return stateShowKeybinds
-	case m.renameID != "" || m.forkMode:
-		return stateRenaming
-	case m.dirpickerOpen:
-		return stateFilepicker
-	case m.closingTmux:
-		return stateClosingTmux
-	case m.forking:
-		return stateForking
-	case m.deleting:
-		return stateDeleting
-	case m.confirmingDelete():
-		return stateConfirmingDelete
-	case m.confirmingFork:
-		return stateConfirmingFork
-	case m.confirmingNewSession:
-		return stateConfirmingNewSession
-	case m.confirmingCloseTmux:
-		return stateConfirmingCloseTmux
-	default:
-		return stateNormal
-	}
+	return m.state
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.appState() {
 	case stateShowKeybinds:
 		return m.handleKeybindsKeys(msg)
-	case stateRenaming:
+	case stateRenameInput, stateForkInput:
 		return m.handleRenameKeys(msg)
 	case stateFilepicker:
 		return m.handleDirpickerKeys(msg)
+	case stateDeleteMode:
+		return m.handleNormalKeys(msg)
 	case stateConfirmingDelete:
 		return m.handleConfirmDeleteKeys(msg)
 	case stateDeleting, stateForking, stateClosingTmux:
@@ -78,7 +59,7 @@ func (m model) handleRenameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelRename()
 		return m, nil
 	case "enter":
-		if m.forkMode {
+		if m.state == stateForkInput {
 			cmd := m.finishFork()
 			return m, cmd
 		}
@@ -93,7 +74,7 @@ func (m model) handleRenameKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleConfirmDeleteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.deleting = true
+		m.state = stateDeleting
 		var ids []string
 		for id := range m.selected {
 			ids = append(ids, id)
@@ -106,13 +87,12 @@ func (m model) handleConfirmDeleteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if len(ids) == 0 {
-			m.deleting = false
-			m.confirming = false
+			m.state = stateNormal
 			return m, nil
 		}
 		return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
 	case "n", "N", "esc", "q":
-		m.confirming = false
+		m.state = stateDeleteMode
 		return m, nil
 	}
 	return m, nil
@@ -121,14 +101,14 @@ func (m model) handleConfirmDeleteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleConfirmNewSessionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.confirmingNewSession = false
+		m.state = stateNormal
 		m.actionDir = m.pendingNewSessionDir
 		m.actionNewSession = true
 		m.actionTmux = m.pendingNewSessionTmux
 		m.pendingNewSessionDir = ""
 		return m, tea.Quit
 	case "n", "N", "esc", "q":
-		m.confirmingNewSession = false
+		m.state = stateNormal
 		m.pendingNewSessionDir = ""
 		return m, nil
 	}
@@ -138,8 +118,7 @@ func (m model) handleConfirmNewSessionKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 func (m model) handleConfirmForkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.confirmingFork = false
-		m.forking = true
+		m.state = stateForking
 		return m, tea.Batch(
 			m.spinner.Tick,
 			doForkCmd(
@@ -151,7 +130,7 @@ func (m model) handleConfirmForkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			),
 		)
 	case "n", "N", "esc", "q":
-		m.confirmingFork = false
+		m.state = stateNormal
 		m.pendingForkID = ""
 		m.pendingForkTitle = ""
 		m.pendingForkDir = ""
@@ -163,14 +142,13 @@ func (m model) handleConfirmForkKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) handleConfirmCloseTmuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "y", "Y":
-		m.confirmingCloseTmux = false
-		m.closingTmux = true
+		m.state = stateClosingTmux
 		return m, tea.Batch(
 			m.spinner.Tick,
 			doCloseTmuxCmd(m.dbPath, m.closeTmuxSessionID, m.closeTmuxTitle),
 		)
 	case "n", "N", "esc", "q":
-		m.confirmingCloseTmux = false
+		m.state = stateNormal
 		m.closeTmuxSessionID = ""
 		m.closeTmuxTitle = ""
 		return m, nil
@@ -195,7 +173,7 @@ func (m model) handleKeybindsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch msg.String() {
 	case "esc", "?", "q":
-		m.keybindsOpen = false
+		m.state = stateNormal
 		m.keybindsScroll = 0
 		return m, nil
 	case "j", "down":
@@ -260,10 +238,10 @@ func (m model) handleDirpickerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.dirpicker.applyFilter()
 			return m, nil
 		}
-		m.dirpickerOpen = false
+		m.state = stateNormal
 		return m, nil
 	case "q":
-		m.dirpickerOpen = false
+		m.state = stateNormal
 		return m, nil
 	case "enter":
 		return m.handleDirpickerEnter()
@@ -287,7 +265,7 @@ func (m model) handleDirpickerEnter() (tea.Model, tea.Cmd) {
 }
 
 func (m model) confirmDirpickerDir(dir string) (tea.Model, tea.Cmd) {
-	m.dirpickerOpen = false
+	m.state = stateNormal
 	m.actionDir = dir
 	m.actionNewSession = true
 	m.actionTmux = m.mode == "tmux" && m.hasTmux
@@ -297,15 +275,15 @@ func (m model) confirmDirpickerDir(dir string) (tea.Model, tea.Cmd) {
 func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	isFiltering := m.list.SettingFilter()
 
-	if m.deleteMode && !isFiltering {
+	if m.state == stateDeleteMode && !isFiltering {
 		switch msg.String() {
 		case "esc":
-			m.deleteMode = false
+			m.state = stateNormal
 			m.selected = make(map[string]struct{})
 			cmd := m.rebuildItems()
 			return m, cmd
 		case "?":
-			m.keybindsOpen = true
+			m.state = stateShowKeybinds
 			m.keybindsScroll = 0
 			return m, nil
 		case " ":
@@ -330,7 +308,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, nil
 				}
 			}
-			m.confirming = true
+			m.state = stateConfirmingDelete
 			return m, nil
 		}
 	}
@@ -340,7 +318,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "?":
-			m.keybindsOpen = true
+			m.state = stateShowKeybinds
 			m.keybindsScroll = 0
 			return m, nil
 		case "shift+down", "J":
@@ -371,7 +349,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := m.rebuildItems()
 			return m, tea.Batch(cmd, needsPreview(m))
 		case "d":
-			m.deleteMode = true
+			m.state = stateDeleteMode
 			cmd := m.rebuildItems()
 			return m, cmd
 		case "ctrl+space", "ctrl+@":
@@ -410,7 +388,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 		case " ":
-			if m.grouped && !m.deleteMode {
+			if m.grouped && m.state != stateDeleteMode {
 				cmd := m.handleGroupSpace()
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
@@ -442,7 +420,7 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if !m.deleteMode {
+	if m.state != stateDeleteMode {
 		switch msg.String() {
 		case "ctrl+n":
 			oldIndex := m.list.Index()
@@ -480,14 +458,14 @@ func (m model) handleNewSessionKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.confirmingNewSession = true
+	m.state = stateConfirmingNewSession
 	m.pendingNewSessionDir = dir
 	m.pendingNewSessionTmux = m.mode == "tmux" && m.hasTmux
 	return m, nil
 }
 
 func (m model) handleNewSessionPickerKey() (tea.Model, tea.Cmd) {
-	m.dirpickerOpen = true
+	m.state = stateFilepicker
 	return m, m.dirpicker.readDir()
 }
 
@@ -500,7 +478,7 @@ func (m model) handleForkKey() (tea.Model, tea.Cmd) {
 	if !ok {
 		return m, nil
 	}
-	m.confirmingFork = true
+	m.state = stateConfirmingFork
 	m.pendingForkID = sess.ID
 	m.pendingForkTitle = sess.Title
 	m.pendingForkDir = sess.Directory
@@ -520,7 +498,7 @@ func (m model) handleCloseTmuxKey() (tea.Model, tea.Cmd) {
 	if st < stateActive {
 		return m, nil
 	}
-	m.confirmingCloseTmux = true
+	m.state = stateConfirmingCloseTmux
 	m.closeTmuxSessionID = sess.ID
 	m.closeTmuxTitle = sess.Title
 	return m, nil

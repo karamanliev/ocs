@@ -14,57 +14,47 @@ import (
 )
 
 type model struct {
-	list             list.Model
-	delegate         *sessionDelegate
-	sessions         []Session
-	groups           []groupInfo
-	states           map[string]sessionState
-	firstMsgs        map[string]previewData
-	selected         map[string]struct{}
-	deleteMode       bool
-	confirming       bool
-	showPreview      bool
-	grouped          bool
-	mode             string
-	hasTmux          bool
-	isDark           bool
-	agentPath        string
-	dbPath           string
-	width            int
-	height           int
-	actionID         string
-	actionDir        string
-	actionTitle      string
-	actionTmux       bool
-	actionNewSession bool
-	theme            theme
-	renameID         string
-	renameInput      textinput.Model
-	forkMode         bool
-	forkSessionID    string
-	confirmingNewSession bool
-	pendingNewSessionDir string
+	list                  list.Model
+	delegate              *sessionDelegate
+	sessions              []Session
+	groups                []groupInfo
+	states                map[string]sessionState
+	firstMsgs             map[string]previewData
+	selected              map[string]struct{}
+	showPreview           bool
+	grouped               bool
+	mode                  string
+	hasTmux               bool
+	isDark                bool
+	agentPath             string
+	dbPath                string
+	width                 int
+	height                int
+	actionID              string
+	actionDir             string
+	actionTitle           string
+	actionTmux            bool
+	actionNewSession      bool
+	theme                 theme
+	renameID              string
+	renameInput           textinput.Model
+	forkSessionID         string
+	pendingNewSessionDir  string
 	pendingNewSessionTmux bool
-	confirmingFork   bool
-	pendingForkID    string
-	pendingForkTitle string
-	pendingForkDir   string
-	forking          bool
-	confirmingCloseTmux bool
-	closingTmux      bool
-	closeTmuxSessionID string
-	closeTmuxTitle   string
-	lastClickAt      time.Time
-	lastClickIx      int
-	deleting         bool
-	spinner          spinner.Model
-	previewScroll    int
-	previewScrollMax int
-	pendingSelectRef *itemRef
-	dirpicker        dirpicker
-	dirpickerOpen    bool
-	keybindsOpen     bool
-	keybindsScroll   int
+	pendingForkID         string
+	pendingForkTitle      string
+	pendingForkDir        string
+	closeTmuxSessionID    string
+	closeTmuxTitle        string
+	lastClickAt           time.Time
+	lastClickIx           int
+	state                 appState
+	spinner               spinner.Model
+	previewScroll         int
+	previewScrollMax      int
+	pendingSelectRef      *itemRef
+	dirpicker             dirpicker
+	keybindsScroll        int
 }
 
 type deleteDoneMsg struct{}
@@ -263,6 +253,7 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 		lastClickIx: -1,
 		spinner:     s,
 		dirpicker:   dp,
+		state:       stateNormal,
 	}, nil
 }
 
@@ -288,7 +279,7 @@ func (m *model) applyTheme() {
 }
 
 func (m model) confirmingDelete() bool {
-	return m.confirming && m.deleteMode
+	return m.state == stateConfirmingDelete
 }
 
 func (m *model) selectedSession() (Session, bool) {
@@ -319,6 +310,7 @@ func (m *model) startRename() {
 	m.renameID = sess.ID
 	m.renameInput.SetValue("")
 	m.renameInput.Focus()
+	m.state = stateRenameInput
 }
 
 func (m *model) startFork() {
@@ -326,14 +318,14 @@ func (m *model) startFork() {
 	if !ok {
 		return
 	}
-	m.forkMode = true
 	m.forkSessionID = sess.ID
 	m.renameInput.SetValue("")
 	m.renameInput.Focus()
+	m.state = stateForkInput
 }
 
 func (m *model) finishRename() tea.Cmd {
-	if m.renameID == "" {
+	if m.renameID == "" || m.state != stateRenameInput {
 		return nil
 	}
 	newTitle := strings.TrimSpace(m.renameInput.Value())
@@ -356,7 +348,7 @@ func (m *model) finishRename() tea.Cmd {
 }
 
 func (m *model) finishFork() tea.Cmd {
-	if m.forkSessionID == "" {
+	if m.forkSessionID == "" || m.state != stateForkInput {
 		return nil
 	}
 	title := strings.TrimSpace(m.renameInput.Value())
@@ -369,8 +361,7 @@ func (m *model) finishFork() tea.Cmd {
 		m.cancelRename()
 		return nil
 	}
-	m.forkMode = false
-	m.forking = true
+	m.state = stateForking
 	useTmux := m.mode == "tmux" && m.hasTmux
 	return tea.Batch(
 		m.spinner.Tick,
@@ -380,23 +371,18 @@ func (m *model) finishFork() tea.Cmd {
 
 func (m *model) cancelRename() {
 	m.renameID = ""
-	m.forkMode = false
 	m.forkSessionID = ""
-	m.confirmingNewSession = false
 	m.pendingNewSessionDir = ""
-	m.confirmingFork = false
+	m.pendingNewSessionTmux = false
 	m.pendingForkID = ""
 	m.pendingForkTitle = ""
 	m.pendingForkDir = ""
-	m.forking = false
-	m.confirmingCloseTmux = false
-	m.closingTmux = false
 	m.closeTmuxSessionID = ""
 	m.closeTmuxTitle = ""
-	m.keybindsOpen = false
 	m.keybindsScroll = 0
 	m.renameInput.Blur()
 	m.renameInput.SetValue("")
+	m.state = stateNormal
 }
 
 func (m *model) updatePreviewScrollMax() {
@@ -429,7 +415,6 @@ func (m *model) updatePreviewScrollMax() {
 	if contentW < 6 {
 		contentW = 6
 	}
-	// header: "" + title + dir + ""
 	total := 4 + len(m.buildPreviewLines(cached, contentW))
 	max := total - innerH
 	if max < 0 {

@@ -110,11 +110,16 @@ func (d *sessionDelegate) Render(w io.Writer, m list.Model, index int, item list
 	updated := time.Unix(i.session.Updated/1000, (i.session.Updated%1000)*1e6)
 	timeText := formatDuration(time.Since(updated))
 
+	filterText := ""
+	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
+		filterText = m.FilterInput.Value()
+	}
+
 	if index == m.Index() {
-		d.renderCursor(w, m, i, timeText)
+		d.renderCursor(w, i, timeText, updated, filterText)
 		return
 	}
-	d.renderItem(w, m, i, timeText)
+	d.renderItem(w, i, timeText, updated, filterText)
 }
 
 func (d *sessionDelegate) formattedTitle(i sessionItem, filter string, cursor bool) string {
@@ -153,62 +158,15 @@ func (d *sessionDelegate) formattedDir(sess Session, filter string, cursor bool)
 	return lipgloss.NewStyle().Width(d.dirW).Foreground(d.theme.dim).Italic(false).Render(pathText)
 }
 
-func (d *sessionDelegate) renderCursor(w io.Writer, m list.Model, i sessionItem, timeText string) {
-	filterText := ""
-	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
-		filterText = m.FilterInput.Value()
-	}
+func (d *sessionDelegate) renderLine(i sessionItem, timeText string, updated time.Time, filterText string, cursor bool) string {
+	var parts []string
 
-	checkbox := ""
-	if i.showCheckbox {
-		checkbox = "[ ]"
-		if i.isSelected {
-			checkbox = "[x]"
-		}
+	timeStr := padRight(timeText, d.timeW)
+	if !cursor {
+		timeStr = lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(time.Since(updated))).Render(timeText)
 	}
+	parts = append(parts, "  ", timeStr+" ")
 
-	parts := []string{
-		"  ",
-		padRight(timeText, d.timeW) + " ",
-	}
-	if d.showCheckbox {
-		parts = append(parts, padRight(checkbox, d.checkboxW)+" ")
-	}
-	parts = append(parts,
-		padRight(indicatorForState(i.state), d.indicatorW)+" ",
-		d.formattedTitle(i, filterText, true),
-	)
-	if !d.grouped {
-		parts = append(parts, " ", d.formattedDir(i.session, filterText, true))
-	}
-
-	line := strings.Join(parts, "")
-	if vis := lipgloss.Width(line); vis < d.width {
-		line += strings.Repeat(" ", d.width-vis)
-	}
-	line = lipgloss.NewStyle().Background(d.theme.cursorBg(d.mode)).Bold(true).Render(line)
-	fmt.Fprint(w, line)
-}
-
-func (d *sessionDelegate) renderItem(w io.Writer, m list.Model, i sessionItem, timeText string) {
-	filterText := ""
-	if m.FilterState() == list.Filtering || m.FilterState() == list.FilterApplied {
-		filterText = m.FilterInput.Value()
-	}
-
-	dura := time.Since(time.Unix(i.session.Updated/1000, (i.session.Updated%1000)*1e6))
-	timeStr := lipgloss.NewStyle().Width(d.timeW).Foreground(d.theme.colorForDuration(dura)).Render(timeText)
-
-	indicatorColor := d.theme.indicatorActive
-	if i.state == stateRunning {
-		indicatorColor = d.theme.indicatorRunning
-	}
-	indicatorStr := lipgloss.NewStyle().Width(d.indicatorW).Foreground(indicatorColor).Render(indicatorForState(i.state))
-
-	parts := []string{
-		"  ",
-		timeStr + " ",
-	}
 	if d.showCheckbox {
 		cb := strings.Repeat(" ", d.checkboxW)
 		if i.showCheckbox {
@@ -216,23 +174,53 @@ func (d *sessionDelegate) renderItem(w io.Writer, m list.Model, i sessionItem, t
 			if i.isSelected {
 				text = "[x]"
 			}
-			cb = lipgloss.NewStyle().Width(d.checkboxW).Render(text)
+			if cursor {
+				cb = padRight(text, d.checkboxW)
+			} else {
+				cb = lipgloss.NewStyle().Width(d.checkboxW).Render(text)
+			}
 		}
 		parts = append(parts, cb+" ")
 	}
-	parts = append(parts,
-		indicatorStr+" ",
-		d.formattedTitle(i, filterText, false),
-	)
+
+	ind := indicatorForState(i.state)
+	if cursor {
+		ind = padRight(ind, d.indicatorW)
+	} else {
+		indColor := d.theme.indicatorActive
+		if i.state == stateRunning {
+			indColor = d.theme.indicatorRunning
+		}
+		ind = lipgloss.NewStyle().Width(d.indicatorW).Foreground(indColor).Render(ind)
+	}
+	parts = append(parts, ind+" ")
+
+	parts = append(parts, d.formattedTitle(i, filterText, cursor))
+
 	if !d.grouped {
-		parts = append(parts, " ", d.formattedDir(i.session, filterText, false))
+		parts = append(parts, " ", d.formattedDir(i.session, filterText, cursor))
 	}
 
-	line := lipgloss.JoinHorizontal(lipgloss.Left, parts...)
+	var line string
+	if cursor {
+		line = strings.Join(parts, "")
+	} else {
+		line = lipgloss.JoinHorizontal(lipgloss.Left, parts...)
+	}
 	if vis := lipgloss.Width(line); vis < d.width {
 		line += strings.Repeat(" ", d.width-vis)
 	}
+	return line
+}
+
+func (d *sessionDelegate) renderCursor(w io.Writer, i sessionItem, timeText string, updated time.Time, filterText string) {
+	line := d.renderLine(i, timeText, updated, filterText, true)
+	line = lipgloss.NewStyle().Background(d.theme.cursorBg(d.mode)).Bold(true).Render(line)
 	fmt.Fprint(w, line)
+}
+
+func (d *sessionDelegate) renderItem(w io.Writer, i sessionItem, timeText string, updated time.Time, filterText string) {
+	fmt.Fprint(w, d.renderLine(i, timeText, updated, filterText, false))
 }
 
 func (d *sessionDelegate) renderGroupHeader(w io.Writer, m list.Model, index int, item groupHeaderItem) {
@@ -283,14 +271,6 @@ func indicatorForState(st sessionState) string {
 	default:
 		return " "
 	}
-}
-
-func pathWithArrow(rendered string, isWork bool, t theme) string {
-	if !isWork {
-		return rendered
-	}
-	arrow := lipgloss.NewStyle().Foreground(t.indicatorRunning).Render(" ↗")
-	return rendered + arrow
 }
 
 func padRight(s string, width int) string {
@@ -348,8 +328,6 @@ func highlightMatch(text, filter string, defaultStyle *lipgloss.Style, matchColo
 	}
 	return buf.String()
 }
-
-// Rendering helpers shared between delegate and view
 
 func withLineBg(line string, bg lipgloss.Color) string {
 	hex := string(bg)

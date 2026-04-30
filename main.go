@@ -30,7 +30,13 @@ func parseOptionalBoolFlag(args []string, i *int, name string) bool {
 		}
 		return true
 	}
-	return parseBoolArg(name, strings.SplitN(arg, "=", 2)[1])
+	if strings.HasPrefix(arg, name+"=") {
+		parts := strings.SplitN(arg, "=", 2)
+		if len(parts) == 2 {
+			return parseBoolArg(name, parts[1])
+		}
+	}
+	return false
 }
 
 func parseArgs() (startTmux, noPreview, grouped bool, theme string) {

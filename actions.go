@@ -12,7 +12,9 @@ import (
 
 func deleteSession(cmd, id string) {
 	c := exec.Command(cmd, "session", "delete", id)
-	_ = c.Run()
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "ocs: failed to delete session %s: %v\n", id, err)
+	}
 }
 
 func resumeSession(cmd, id, dir string) {
@@ -21,7 +23,9 @@ func resumeSession(cmd, id, dir string) {
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	_ = c.Run()
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "ocs: failed to resume session %s: %v\n", id, err)
+	}
 }
 
 func newSessionInDir(cmd, dir string) {
@@ -30,7 +34,9 @@ func newSessionInDir(cmd, dir string) {
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
-	_ = c.Run()
+	if err := c.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "ocs: failed to start new session: %v\n", err)
+	}
 }
 
 // findTmuxWindow locates a tmux window running opencode for the given session.
@@ -137,7 +143,9 @@ func ctrlTmux(agentPath, id, dir, title string) {
 
 	// If this exact session is already in a tmux window, focus it.
 	if targetSess, winIdx, found := findTmuxWindow(tmuxPath, id); found {
-		_ = exec.Command(tmuxPath, "select-window", "-t", targetSess+":"+winIdx).Run()
+		if err := exec.Command(tmuxPath, "select-window", "-t", targetSess+":"+winIdx).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "ocs: select-window failed: %v\n", err)
+		}
 		attachTmux(tmuxPath, targetSess)
 		return
 	}
@@ -181,7 +189,9 @@ func ctrlTmux(agentPath, id, dir, title string) {
 	// Tag the new pane so we can find it later without /proc scanning.
 	paneOut, _ := exec.Command(tmuxPath, "list-panes", "-t", winTarget, "-F", "#{pane_id}").Output()
 	if paneID := strings.TrimSpace(string(paneOut)); paneID != "" {
-		_ = exec.Command(tmuxPath, "set-option", "-p", "-t", paneID, "@ocs_session_id", id).Run()
+		if err := exec.Command(tmuxPath, "set-option", "-p", "-t", paneID, "@ocs_session_id", id).Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "ocs: failed to tag pane: %v\n", err)
+		}
 	}
 
 	attachTmux(tmuxPath, sessionName)

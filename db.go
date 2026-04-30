@@ -200,9 +200,9 @@ func timeNowMs() int64 {
 	return time.Now().UnixMilli()
 }
 
-func queryPreviewText(db *sql.DB, sessionID, role, order string) string {
+func queryPreviewText(db *sql.DB, sessionID, role, order string) (string, error) {
 	var text string
-	_ = db.QueryRow(fmt.Sprintf(`
+	err := db.QueryRow(fmt.Sprintf(`
 		SELECT json_extract(p.data, '$.text') FROM part p
 		JOIN message m ON m.id = p.message_id
 		WHERE m.session_id = ?
@@ -211,7 +211,7 @@ func queryPreviewText(db *sql.DB, sessionID, role, order string) string {
 		ORDER BY m.time_created %s, p.time_created %s
 		LIMIT 1
 	`, order, order), sessionID, role).Scan(&text)
-	return text
+	return text, err
 }
 
 func getPreviewData(dbPath, sessionID string) previewData {
@@ -232,11 +232,16 @@ func getPreviewData(dbPath, sessionID string) previewData {
 		LIMIT 1
 	`, sessionID).Scan(&modelName)
 
+	firstUser, _ := queryPreviewText(db, sessionID, "user", "ASC")
+	firstAssistant, _ := queryPreviewText(db, sessionID, "assistant", "ASC")
+	lastUser, _ := queryPreviewText(db, sessionID, "user", "DESC")
+	lastAssistant, _ := queryPreviewText(db, sessionID, "assistant", "DESC")
+
 	return previewData{
-		firstUser:      queryPreviewText(db, sessionID, "user", "ASC"),
-		firstAssistant: queryPreviewText(db, sessionID, "assistant", "ASC"),
-		lastUser:       queryPreviewText(db, sessionID, "user", "DESC"),
-		lastAssistant:  queryPreviewText(db, sessionID, "assistant", "DESC"),
+		firstUser:      firstUser,
+		firstAssistant: firstAssistant,
+		lastUser:       lastUser,
+		lastAssistant:  lastAssistant,
 		modelName:      modelName,
 	}
 }
@@ -399,7 +404,10 @@ func copyParts(db *sql.DB, oldSessionID, newSessionID string, msgMap map[string]
 	}
 
 	for _, pi := range parts {
-		newMsgID := msgMap[pi.messageID]
+		newMsgID, ok := msgMap[pi.messageID]
+		if !ok {
+			return fmt.Errorf("message id %s not found in msgMap", pi.messageID)
+		}
 		_, err := db.Exec(`
 			INSERT INTO part (id, message_id, session_id, data, time_created, time_updated)
 			VALUES (?, ?, ?, ?, ?, ?)

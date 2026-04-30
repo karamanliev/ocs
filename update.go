@@ -28,9 +28,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case deleteDoneMsg:
-		m.deleting = false
-		m.confirming = false
-		m.deleteMode = false
+		m.state = stateNormal
 		m.selected = make(map[string]struct{})
 		sessions, err := getSessions(m.dbPath)
 		if err != nil {
@@ -45,7 +43,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case spinner.TickMsg:
-		if m.deleting || m.forking || m.closingTmux {
+		if m.state == stateDeleting || m.state == stateForking || m.state == stateClosingTmux {
 			var cmd tea.Cmd
 			m.spinner, cmd = m.spinner.Update(msg)
 			return m, cmd
@@ -53,7 +51,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case forkDoneMsg:
-		m.forking = false
+		m.state = stateNormal
 		m.pendingForkID = ""
 		m.pendingForkTitle = ""
 		m.pendingForkDir = ""
@@ -67,7 +65,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case closeTmuxDoneMsg:
-		m.closingTmux = false
+		m.state = stateNormal
 		m.closeTmuxSessionID = ""
 		m.closeTmuxTitle = ""
 		m.states = getSessionStates(m.sessions)
@@ -144,8 +142,8 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	if m.renameID != "" || m.confirmingDelete() || m.deleting || m.dirpickerOpen {
-		if m.dirpickerOpen {
+	if m.state == stateRenameInput || m.state == stateForkInput || m.state == stateConfirmingDelete || m.state == stateDeleting || m.state == stateFilepicker {
+		if m.state == stateFilepicker {
 			return m.handleDirpickerMouse(msg)
 		}
 		return m, nil
@@ -207,7 +205,7 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	m.lastClickIx = ix
 	m.lastClickAt = now
 
-	if doubleClick && !m.deleteMode {
+	if doubleClick && m.state != stateDeleteMode {
 		m.lastClickIx = -1
 		m.lastClickAt = time.Time{}
 		return m.setAction(m.mode == "tmux" && m.hasTmux)
@@ -265,7 +263,7 @@ func (m *model) rebuildItems() tea.Cmd {
 }
 
 func (m *model) rebuildItemsFor(ref itemRef) tea.Cmd {
-	m.delegate.showCheckbox = m.deleteMode
+	m.delegate.showCheckbox = m.state == stateDeleteMode
 	m.delegate.grouped = m.grouped
 	m.resize()
 
@@ -277,7 +275,7 @@ func (m *model) rebuildItemsFor(ref itemRef) tea.Cmd {
 	items := buildListItems(ordered, m.groups, m.states, m.selected, m.grouped, m.filterActive(), m.matchingGroupPaths(), m.mode)
 	for i := range items {
 		if sessItem, ok := items[i].(sessionItem); ok {
-			sessItem.showCheckbox = m.deleteMode
+			sessItem.showCheckbox = m.state == stateDeleteMode
 			items[i] = sessItem
 		}
 	}
