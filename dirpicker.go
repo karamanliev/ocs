@@ -257,8 +257,8 @@ func (d *dirpicker) View(theme theme, width int, totalHeight int) string {
 	}
 
 	cursorStyle := lipgloss.NewStyle().Foreground(theme.accent).Bold(true)
-	dirStyle := lipgloss.NewStyle().Foreground(theme.textMain)
-	selDirStyle := lipgloss.NewStyle().Foreground(theme.textMain).Bold(true)
+	dirStyle := lipgloss.NewStyle().Foreground(theme.textMain).Background(theme.modalBg)
+	selDirStyle := lipgloss.NewStyle().Foreground(theme.accent).Background(theme.modalBg).Bold(true)
 	matchStyle := lipgloss.NewStyle().Foreground(theme.filterMatch).Bold(true)
 
 	for i := d.scroll; i < visibleEnd; i++ {
@@ -267,23 +267,19 @@ func (d *dirpicker) View(theme theme, width int, totalHeight int) string {
 		style := dirStyle
 
 		if i == d.selected {
-			prefix = cursorStyle.Render(" > ") + " "
+			prefix = cursorStyle.Render(" > ")
 			style = selDirStyle
 		}
 
 		// Highlight filter matches in directory names
 		var nameRendered string
 		if d.filterText != "" {
-			nameRendered = highlightMatchDirName(name, d.filterText, style, matchStyle)
+			nameRendered = highlightMatchDirName(name, d.filterText, style, theme, matchStyle)
 		} else {
 			nameRendered = style.Render(name + "/")
 		}
 
 		line := prefix + nameRendered
-		vis := lipgloss.Width(line)
-		if vis < width {
-			line += strings.Repeat(" ", width-vis)
-		}
 		s.WriteString(line)
 		s.WriteString("\n")
 	}
@@ -296,7 +292,7 @@ func (d *dirpicker) View(theme theme, width int, totalHeight int) string {
 	return s.String()
 }
 
-func highlightMatchDirName(name, filter string, baseStyle, matchStyle lipgloss.Style) string {
+func highlightMatchDirName(name, filter string, baseStyle lipgloss.Style, theme theme, matchStyle lipgloss.Style) string {
 	if filter == "" {
 		return baseStyle.Render(name + "/")
 	}
@@ -316,7 +312,7 @@ func highlightMatchDirName(name, filter string, baseStyle, matchStyle lipgloss.S
 			parts = append(parts, baseStyle.Render(before))
 		}
 		matched := name[i+idx : i+idx+len(filter)]
-		parts = append(parts, matchStyle.Render(matched))
+		parts = append(parts, matchStyle.Background(theme.modalBg).Render(matched))
 		i = i + idx + len(filter)
 	}
 	parts = append(parts, baseStyle.Render("/"))

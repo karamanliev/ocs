@@ -252,10 +252,8 @@ func (m model) renderDirpickerModal() string {
 	width := m.dirpickerWidth()
 	dpHeight := m.dirpickerHeight()
 
-	dpView := m.dirpicker.View(m.theme, width, dpHeight)
-	body := lipgloss.NewStyle().
-		Width(width).
-		Render(dpView)
+	innerWidth := max(width-4, 1)
+	dpView := m.dirpicker.View(m.theme, innerWidth, dpHeight)
 
 	hint := m.buildHint([]hintPart{
 		{"<CR>", " confirm"},
@@ -264,11 +262,11 @@ func (m model) renderDirpickerModal() string {
 		{".", " hidden"},
 	})
 
-	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, body, hint)
+	return m.renderModalBox(width, m.theme.accent, "New Session", m.theme.accent, dpView, hint)
 }
 
 func (m model) dirpickerHeight() int {
-	return min(max(m.height*4/5, 12), 26)
+	return min(max(m.height*3/5, 12), 26)
 }
 
 func (m model) dirpickerWidth() int {
