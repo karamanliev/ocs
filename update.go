@@ -423,7 +423,7 @@ func (m *model) jumpGroup(delta int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	current := m.list.GlobalIndex()
+	current := m.list.Index()
 	currentHeader := -1
 	for i := current; i >= 0; i-- {
 		if _, ok := items[i].(groupHeaderItem); ok {
