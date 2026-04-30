@@ -402,6 +402,11 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "enter":
+			if item := m.list.SelectedItem(); item != nil {
+				if header, ok := item.(groupHeaderItem); ok && m.grouped {
+					return m.toggleGroupByPath(header.path, header.collapsed)
+				}
+			}
 			return m.setAction(m.mode == "tmux" && m.hasTmux)
 		case "n":
 			return m.handleNewSessionKey()
