@@ -275,10 +275,11 @@ func (m model) confirmDirpickerDir(dir string) (tea.Model, tea.Cmd) {
 
 func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	isFiltering := m.list.SettingFilter()
+	isDeleting := m.state == stateDeleteMode
 
-	if m.state == stateDeleteMode && !isFiltering {
+	if isDeleting && !isFiltering {
 		switch msg.String() {
-		case "esc":
+		case "esc", "q":
 			m.state = stateNormal
 			m.selected = make(map[string]struct{})
 			cmd := m.rebuildItems()
@@ -288,6 +289,14 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.keybindsScroll = 0
 			return m, nil
 		case " ":
+			if m.grouped {
+				if item := m.list.SelectedItem(); item != nil {
+					if _, ok := item.(groupHeaderItem); ok {
+						cmd := m.handleGroupSpace()
+						return m, tea.Batch(cmd, needsPreview(m))
+					}
+				}
+			}
 			if item := m.list.SelectedItem(); item != nil {
 				sess, ok := sessionFromItem(item)
 				if !ok {
@@ -370,7 +379,9 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "r":
-			m.startRename()
+			if !isDeleting {
+				m.startRename()
+			}
 			return m, nil
 		case "[":
 			if m.grouped {
@@ -391,13 +402,13 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 		case " ":
-			if m.grouped && m.state != stateDeleteMode {
+			if m.grouped && !isDeleting {
 				cmd := m.handleGroupSpace()
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
 			return m, nil
 		case "alt+enter", "ctrl+o":
-			if m.hasTmux {
+			if !isDeleting && m.hasTmux {
 				if m.mode == "all" {
 					return m.setAction(true)
 				}
@@ -412,35 +423,44 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m.setAction(m.mode == "tmux" && m.hasTmux)
 		case "n":
-			return m.handleNewSessionKey()
+			if !isDeleting {
+				return m.handleNewSessionKey()
+			}
+			return m, nil
 		case "N":
-			return m.handleNewSessionPickerKey()
+			if !isDeleting {
+				return m.handleNewSessionPickerKey()
+			}
+			return m, nil
 		case "y":
-			return m.handleForkKey()
+			if !isDeleting {
+				return m.handleForkKey()
+			}
+			return m, nil
 		case "Y":
-			m.startFork()
+			if !isDeleting {
+				m.startFork()
+			}
 			return m, nil
 		case "x":
-			if m.hasTmux && m.mode == "tmux" {
+			if !isDeleting && m.hasTmux && m.mode == "tmux" {
 				return m.handleCloseTmuxKey()
 			}
 			return m, nil
 		}
 	}
 
-	if m.state != stateDeleteMode {
-		switch msg.String() {
-		case "ctrl+n":
-			oldIndex := m.list.Index()
-			m.list.CursorDown()
-			m.skipSeparatorSelection(oldIndex)
-			return m.afterMove()
-		case "ctrl+p":
-			oldIndex := m.list.Index()
-			m.list.CursorUp()
-			m.skipSeparatorSelection(oldIndex)
-			return m.afterMove()
-		}
+	switch msg.String() {
+	case "ctrl+n":
+		oldIndex := m.list.Index()
+		m.list.CursorDown()
+		m.skipSeparatorSelection(oldIndex)
+		return m.afterMove()
+	case "ctrl+p":
+		oldIndex := m.list.Index()
+		m.list.CursorUp()
+		m.skipSeparatorSelection(oldIndex)
+		return m.afterMove()
 	}
 
 	return m.passToList(msg)
