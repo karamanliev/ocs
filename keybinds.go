@@ -157,28 +157,25 @@ func (m model) handleConfirmCloseTmuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) handleKeybindsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	modalMaxH := m.height * 80 / 100
-	if modalMaxH < 10 {
-		modalMaxH = 10
-	}
+func (m model) keybindsMaxScroll() int {
+	modalMaxH := max(m.height*80/100, 10)
 	const chrome = 8
-	maxBodyLines := modalMaxH - chrome
-	if maxBodyLines < 4 {
-		maxBodyLines = 4
+	maxBodyLines := max(modalMaxH-chrome, 4)
+	v := len(keybindsEntries()) - maxBodyLines
+	if v < 0 {
+		v = 0
 	}
-	maxScroll := len(keybindsEntries()) - maxBodyLines
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	return v
+}
 
+func (m model) handleKeybindsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "?", "q":
 		m.state = stateNormal
 		m.keybindsScroll = 0
 		return m, nil
 	case "j", "down":
-		if m.keybindsScroll < maxScroll {
+		if m.keybindsScroll < m.keybindsMaxScroll() {
 			m.keybindsScroll++
 		}
 		return m, nil

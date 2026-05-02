@@ -191,6 +191,22 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if m.state == stateShowKeybinds {
+		switch msg.Button {
+		case tea.MouseButtonWheelUp:
+			if m.keybindsScroll > 0 {
+				m.keybindsScroll--
+			}
+			return m, nil
+		case tea.MouseButtonWheelDown:
+			if m.keybindsScroll < m.keybindsMaxScroll() {
+				m.keybindsScroll++
+			}
+			return m, nil
+		}
+		return m, nil
+	}
+
 	if m.state == stateRenameInput || m.state == stateForkInput || m.state == stateConfirmingDelete || m.state == stateDeleting || m.state == stateFilepicker {
 		if m.state == stateFilepicker {
 			return m.handleDirpickerMouse(msg)
