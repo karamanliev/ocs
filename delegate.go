@@ -183,12 +183,12 @@ func (d *sessionDelegate) renderLine(i sessionItem, timeText string, updated tim
 		parts = append(parts, cb+" ")
 	}
 
-	ind := indicatorForState(i.state)
+	ind := indicatorForState(i.state, d.mode)
 	if cursor {
 		ind = padRight(ind, d.indicatorW)
 	} else {
 		indColor := d.theme.indicatorActive
-		if i.state == stateRunning {
+		if i.state == stateLinked || (i.state == stateDetected && d.mode != "tmux") {
 			indColor = d.theme.indicatorRunning
 		}
 		ind = lipgloss.NewStyle().Width(d.indicatorW).Foreground(indColor).Render(ind)
@@ -262,12 +262,18 @@ func groupedPrefix(title string, grouped bool) string {
 	return "  " + title
 }
 
-func indicatorForState(st sessionState) string {
-	switch st {
-	case stateRunning:
+// indicatorForState returns the visual indicator for a session state.
+//
+// In tmux mode: stateLinked = "●" (green), stateDetected = "○" (dim).
+// In non-tmux mode: any detected state = "●" (green).
+func indicatorForState(st sessionState, mode string) string {
+	switch {
+	case st == stateLinked:
 		return "●"
-	case stateActive:
+	case st == stateDetected && mode == "tmux":
 		return "○"
+	case st == stateDetected:
+		return "●"
 	default:
 		return " "
 	}

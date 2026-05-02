@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -90,7 +91,7 @@ func (m model) handleConfirmDeleteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.state = stateNormal
 			return m, nil
 		}
-		return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids))
+		return m, tea.Batch(m.spinner.Tick, doDeleteCmd(m.agentPath, ids, m.sessions))
 	case "n", "N", "esc", "q":
 		m.state = stateDeleteMode
 		return m, nil
@@ -145,7 +146,7 @@ func (m model) handleConfirmCloseTmuxKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateClosingTmux
 		return m, tea.Batch(
 			m.spinner.Tick,
-			doCloseTmuxCmd(m.dbPath, m.closeTmuxSessionID, m.closeTmuxTitle),
+			doCloseTmuxCmd(m.dbPath, m.closeTmuxSessionID, m.closeTmuxTitle, m.sessions),
 		)
 	case "n", "N", "esc", "q":
 		m.state = stateNormal
@@ -362,6 +363,8 @@ func (m model) handleNormalKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.hasTmux {
 				m.mode = toggleMode(m)
 				m.delegate.mode = m.mode
+				m.states = getSessionStates(m.sessions, m.mode)
+				m.lastStateRefresh = time.Now()
 				cmd := m.rebuildItems()
 				return m, tea.Batch(cmd, needsPreview(m))
 			}
@@ -500,7 +503,7 @@ func (m model) handleCloseTmuxKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	st := m.states[sess.ID]
-	if st < stateActive {
+	if st == stateNone {
 		return m, nil
 	}
 	m.state = stateConfirmingCloseTmux

@@ -37,7 +37,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.sessions = sessions
-		m.states = getSessionStates(sessions)
+		m.states = getSessionStates(sessions, m.mode)
 		m.syncGroups()
 		cmd := m.rebuildItems()
 		return m, cmd
@@ -68,15 +68,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateNormal
 		m.closeTmuxSessionID = ""
 		m.closeTmuxTitle = ""
-		m.states = getSessionStates(m.sessions)
+		m.states = getSessionStates(m.sessions, m.mode)
 		cmd := m.rebuildItems()
 		return m, cmd
 
 	case tea.FocusMsg:
-		return m, func() tea.Msg {
-			dark, err := queryTerminalBackground()
-			return checkThemeMsg{dark: dark, err: err}
-		}
+		// Refresh states + sessions on focus, plus check theme.
+		m.lastStateRefresh = time.Now()
+		return m, tea.Batch(
+			func() tea.Msg {
+				dark, err := queryTerminalBackground()
+				return checkThemeMsg{dark: dark, err: err}
+			},
+			refreshStatesAsync(m.dbPath, m.mode, m.sessions, true),
+		)
 
 	case checkThemeMsg:
 		if msg.err == nil && msg.dark != m.isDark {
@@ -86,11 +91,51 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case dbChangedMsg:
+		// DB WAL changed: re-read sessions and states.
+		m.lastStateRefresh = time.Now()
+		return m, refreshStatesAsync(m.dbPath, m.mode, m.sessions, true)
+
+	case safetyTickMsg:
+		// Fallback refresh every 2 minutes.
+		m.lastStateRefresh = time.Now()
+		return m, tea.Batch(
+			refreshStatesAsync(m.dbPath, m.mode, m.sessions, true),
+			safetyTick(),
+		)
+
+	case stateRefreshMsg:
+		changed := false
+		if msg.fromDB && !sessionsEqual(m.sessions, msg.sessions) {
+			m.sessions = msg.sessions
+			m.syncGroups()
+			changed = true
+		}
+		if !statesEqual(m.states, msg.states) {
+			m.states = msg.states
+			changed = true
+		}
+		if changed {
+			cmd := m.rebuildItems()
+			return m, cmd
+		}
+		return m, nil
+
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
-		return m.handleKey(msg)
+		// Keypress-gated state refresh: if >5s since last refresh, trigger async rescan.
+		var refreshCmd tea.Cmd
+		if time.Since(m.lastStateRefresh) > stateRefreshCooldown {
+			m.lastStateRefresh = time.Now()
+			refreshCmd = refreshStatesAsync(m.dbPath, m.mode, m.sessions, false)
+		}
+		mdl, cmd := m.handleKey(msg)
+		if refreshCmd != nil {
+			cmd = tea.Batch(cmd, refreshCmd)
+		}
+		return mdl, cmd
 	}
 
 	return m.passToList(msg)

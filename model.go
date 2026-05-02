@@ -55,16 +55,18 @@ type model struct {
 	pendingSelectRef      *itemRef
 	dirpicker             dirpicker
 	keybindsScroll        int
+	lastStateRefresh      time.Time
+	dbWatcher             *dbWatcher
 }
 
 type deleteDoneMsg struct{}
 
-func doDeleteCmd(agentPath string, ids []string) tea.Cmd {
+func doDeleteCmd(agentPath string, ids []string, sessions []Session) tea.Cmd {
 	return func() tea.Msg {
 		tmuxPath, _ := exec.LookPath("tmux")
 		for _, id := range ids {
 			if tmuxPath != "" {
-				if sessName, winIdx, found := findTmuxWindow(tmuxPath, id); found {
+				if sessName, winIdx, found := findTmuxWindow(tmuxPath, id, sessions); found {
 					_ = killTmuxWindow(tmuxPath, sessName, winIdx)
 				}
 			}
@@ -100,13 +102,13 @@ type closeTmuxDoneMsg struct {
 	err error
 }
 
-func doCloseTmuxCmd(dbPath, sessionID, title string) tea.Cmd {
+func doCloseTmuxCmd(dbPath, sessionID, title string, sessions []Session) tea.Cmd {
 	return func() tea.Msg {
 		tmuxPath, err := exec.LookPath("tmux")
 		if err != nil {
 			return closeTmuxDoneMsg{id: sessionID, err: err}
 		}
-		sessName, winIdx, found := findTmuxWindow(tmuxPath, sessionID)
+		sessName, winIdx, found := findTmuxWindow(tmuxPath, sessionID, sessions)
 		if !found {
 			return closeTmuxDoneMsg{id: sessionID, err: fmt.Errorf("tmux window not found")}
 		}
@@ -187,7 +189,12 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 		return nil, fmt.Errorf("no sessions found")
 	}
 
-	states := getSessionStates(sessions)
+	initialMode := "all"
+	if startTmux && hasTmux {
+		initialMode = "tmux"
+	}
+
+	states := getSessionStates(sessions, initialMode)
 
 	isDark := detectDarkMode()
 	if themeOverride == "dark" {
@@ -198,10 +205,6 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 	theme := themeForDark[isDark]
 
 	delegate := newSessionDelegate(theme)
-	initialMode := "all"
-	if startTmux && hasTmux {
-		initialMode = "tmux"
-	}
 	delegate.mode = initialMode
 	delegate.grouped = grouped
 
@@ -264,7 +267,7 @@ func newModel(startTmux bool, noPreview bool, grouped bool, themeOverride string
 }
 
 func (m model) Init() tea.Cmd {
-	return needsPreview(m)
+	return tea.Batch(needsPreview(m), safetyTick())
 }
 
 func (m *model) applyTheme() {
@@ -344,7 +347,7 @@ func (m *model) finishRename() tea.Cmd {
 		sessions, err := getSessions(m.dbPath)
 		if err == nil {
 			m.sessions = sessions
-			m.states = getSessionStates(m.sessions)
+			m.states = getSessionStates(m.sessions, m.mode)
 			m.syncGroups()
 			cmd = m.rebuildItems()
 		}

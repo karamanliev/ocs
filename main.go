@@ -86,6 +86,11 @@ func main() {
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithReportFocus(), tea.WithMouseCellMotion())
+
+	// Start the DB filesystem watcher, sending events into the bubbletea program.
+	m.dbWatcher = newDBWatcher(m.dbPath, func(msg tea.Msg) { p.Send(msg) })
+	defer m.dbWatcher.close()
+
 	finalModel, err := p.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ocs: %v\n", err)
@@ -110,7 +115,7 @@ func main() {
 		}
 	} else if fm.actionID != "" {
 		if fm.actionTmux {
-			ctrlTmux(fm.agentPath, fm.actionID, fm.actionDir, fm.actionTitle)
+			ctrlTmux(fm.agentPath, fm.actionID, fm.actionDir, fm.actionTitle, fm.sessions)
 		} else {
 			resumeSession(fm.agentPath, fm.actionID, fm.actionDir)
 		}
