@@ -14,11 +14,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// NOTE: tmux pane-centric detection is in tmux_resolve.go.
-// This file keeps: session types, DB helpers, sessionState, cmdline helpers,
-// getSessionStates (orchestrator), getProcStates (non-tmux fallback), and
-// DB mutation functions (fork, copy, etc.).
-
 type Session struct {
 	ID        string
 	Title     string
@@ -124,15 +119,6 @@ func extractSessionIDFromCmdline(cmdline string) string {
 	}
 	return ""
 }
-
-
-
-// getSessionStates detects which sessions have a live opencode process.
-//
-// In tmux mode, uses the pane-centric resolver (see tmux_resolve.go) plus
-// a /proc cwd fallback for sessions not reachable via any tmux pane.
-//
-// In non-tmux mode, only /proc scan is used.
 func getSessionStates(sessions []Session, mode string) map[string]sessionState {
 	result := make(map[string]sessionState)
 
@@ -143,13 +129,11 @@ func getSessionStates(sessions []Session, mode string) map[string]sessionState {
 		}
 	}
 
-	// /proc fallback: catches sessions not detected via tmux
 	getProcStates(sessions, mode, result)
 
 	return result
 }
 
-// getProcStates scans /proc for opencode processes and populates result.
 func getProcStates(sessions []Session, mode string, result map[string]sessionState) {
 	dirToMostRecent := make(map[string]string, len(sessions))
 	dirSessionCount := make(map[string]int, len(sessions))
@@ -180,17 +164,14 @@ func getProcStates(sessions []Session, mode string, result map[string]sessionSta
 		if !isOpencodeCmdline(cmdline) {
 			continue
 		}
-		// Explicit -s <id> match
 		if id := extractSessionIDFromCmdline(cmdline); id != "" {
 			upgrade(result, id, stateLinked)
 		}
-		// cwd fallback: mark the most recently updated session in this directory
 		procDir, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid))
 		if err != nil {
 			continue
 		}
 		if id, ok := dirToMostRecent[procDir]; ok {
-			// In tmux mode: if multiple sessions share this dir, it is a guess
 			st := stateLinked
 			if mode == "tmux" && dirSessionCount[procDir] > 1 {
 				st = stateDetected

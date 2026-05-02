@@ -73,7 +73,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case tea.FocusMsg:
-		// Refresh states + sessions on focus, plus check theme.
 		m.lastStateRefresh = time.Now()
 		return m, tea.Batch(
 			func() tea.Msg {
@@ -92,12 +91,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case dbChangedMsg:
-		// DB WAL changed: re-read sessions and states.
 		m.lastStateRefresh = time.Now()
 		return m, refreshStatesAsync(m.dbPath, m.mode, m.sessions, true)
 
 	case safetyTickMsg:
-		// Fallback refresh every 2 minutes.
 		m.lastStateRefresh = time.Now()
 		return m, tea.Batch(
 			refreshStatesAsync(m.dbPath, m.mode, m.sessions, true),
@@ -105,6 +102,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 
 	case stateRefreshMsg:
+		if msg.mode != m.mode {
+			if msg.fromDB && !sessionsEqual(m.sessions, msg.sessions) {
+				m.sessions = msg.sessions
+				m.syncGroups()
+				m.states = getSessionStates(m.sessions, m.mode)
+				cmd := m.rebuildItems()
+				return m, cmd
+			}
+			return m, nil
+		}
+
 		changed := false
 		if msg.fromDB && !sessionsEqual(m.sessions, msg.sessions) {
 			m.sessions = msg.sessions
@@ -125,7 +133,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 
 	case tea.KeyMsg:
-		// Keypress-gated state refresh: if >5s since last refresh, trigger async rescan.
 		var refreshCmd tea.Cmd
 		if time.Since(m.lastStateRefresh) > stateRefreshCooldown {
 			m.lastStateRefresh = time.Now()
@@ -152,9 +159,6 @@ func (m model) passToList(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 	m.skipSeparatorSelection(oldIndex)
 
-	// After the list processes FilterMatchesMsg, filteredItems is
-	// repopulated. Resolve any deferred selection now that
-	// VisibleItems is valid again.
 	if m.pendingSelectRef != nil {
 		visible := m.list.VisibleItems()
 		if len(visible) > 0 {
@@ -194,7 +198,6 @@ func (m model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Wheel over preview pane scrolls preview content
 	if m.inPreviewBody(msg.X, msg.Y) {
 		switch msg.Button {
 		case tea.MouseButtonWheelUp:

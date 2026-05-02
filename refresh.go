@@ -10,41 +10,30 @@ import (
 )
 
 const (
-	// stateRefreshCooldown is the minimum time between keypress-triggered
-	// /proc scans. Prevents unnecessary rescans on rapid key presses.
 	stateRefreshCooldown = 5 * time.Second
 
-	// safetyTickInterval is the fallback refresh interval for edge cases
-	// where fsnotify misses events (e.g., WAL checkpoint replaces file).
 	safetyTickInterval = 2 * time.Minute
 )
 
-// dbChangedMsg is sent by the filesystem watcher when opencode.db-wal changes.
 type dbChangedMsg struct{}
 
-// safetyTickMsg is sent by the 2-minute fallback ticker.
 type safetyTickMsg struct{}
 
-// stateRefreshMsg is the result of an async state refresh.
 type stateRefreshMsg struct {
 	sessions []Session
 	states   map[string]sessionState
-	fromDB   bool // true if sessions were re-read from DB
+	fromDB   bool
+	mode     string
 }
 
-// dbWatcher watches the opencode database WAL file for changes and sends
-// dbChangedMsg to the bubbletea program when a write occurs.
 type dbWatcher struct {
 	watcher *fsnotify.Watcher
 	done    chan struct{}
 }
 
-// newDBWatcher creates a filesystem watcher on the opencode.db-wal file.
-// Returns nil if the file does not exist or watching fails.
 func newDBWatcher(dbPath string, send func(tea.Msg)) *dbWatcher {
 	walPath := dbPath + "-wal"
 	if _, err := os.Stat(walPath); err != nil {
-		// Also try watching the parent directory (WAL may not exist yet)
 		walPath = filepath.Dir(dbPath)
 	}
 
@@ -63,7 +52,6 @@ func newDBWatcher(dbPath string, send func(tea.Msg)) *dbWatcher {
 	}
 
 	go func() {
-		// Debounce: collapse rapid writes into a single notification.
 		var debounce *time.Timer
 		for {
 			select {
@@ -81,7 +69,6 @@ func newDBWatcher(dbPath string, send func(tea.Msg)) *dbWatcher {
 					send(dbChangedMsg{})
 				})
 			case <-w.Errors:
-				// Ignore errors, the safety tick will catch staleness.
 			case <-dw.done:
 				if debounce != nil {
 					debounce.Stop()
@@ -102,15 +89,12 @@ func (dw *dbWatcher) close() {
 	dw.watcher.Close()
 }
 
-// safetyTick returns a command that sends safetyTickMsg after the safety interval.
 func safetyTick() tea.Cmd {
 	return tea.Tick(safetyTickInterval, func(time.Time) tea.Msg {
 		return safetyTickMsg{}
 	})
 }
 
-// refreshStatesAsync performs an async state refresh. If fromDB is true,
-// sessions are re-read from the database first.
 func refreshStatesAsync(dbPath, mode string, currentSessions []Session, fromDB bool) tea.Cmd {
 	return func() tea.Msg {
 		sessions := currentSessions
@@ -125,11 +109,11 @@ func refreshStatesAsync(dbPath, mode string, currentSessions []Session, fromDB b
 			sessions: sessions,
 			states:   states,
 			fromDB:   fromDB,
+			mode:     mode,
 		}
 	}
 }
 
-// statesEqual compares two state maps for equality.
 func statesEqual(a, b map[string]sessionState) bool {
 	if len(a) != len(b) {
 		return false
@@ -142,7 +126,6 @@ func statesEqual(a, b map[string]sessionState) bool {
 	return true
 }
 
-// sessionsEqual compares two session slices by ID and Updated timestamp.
 func sessionsEqual(a, b []Session) bool {
 	if len(a) != len(b) {
 		return false

@@ -2,10 +2,6 @@ package main
 
 import "testing"
 
-// ---------------------------------------------------------------------------
-// parsePaneTitle
-// ---------------------------------------------------------------------------
-
 func TestParsePaneTitle(t *testing.T) {
 	tests := []struct {
 		input     string
@@ -27,10 +23,6 @@ func TestParsePaneTitle(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// resolveTitle
-// ---------------------------------------------------------------------------
 
 func sessions(ss ...Session) []Session { return ss }
 
@@ -133,10 +125,6 @@ func TestResolveTitle_NoCandidates(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// parsePPID
-// ---------------------------------------------------------------------------
-
 func TestParsePPID(t *testing.T) {
 	tests := []struct {
 		input string
@@ -154,10 +142,6 @@ func TestParsePPID(t *testing.T) {
 		}
 	}
 }
-
-// ---------------------------------------------------------------------------
-// resolvePanes
-// ---------------------------------------------------------------------------
 
 func TestResolvePanes_AuthoritativeTitle(t *testing.T) {
 	panes := []tmuxPane{
@@ -207,7 +191,6 @@ func TestResolvePanes_AmbiguousTitleProcWins(t *testing.T) {
 		ses("s1", "Greeting", "/a"),
 		ses("s2", "Greeting", "/a"),
 	)
-	// Simulate: pane %1 runs s1 via -s, pane %2 runs s2 via -s
 	pt := procTable{
 		byPID: map[int]procEntry{
 			100: {pid: 100, ppid: 0},
@@ -355,5 +338,22 @@ func TestResolvePanes_SkipsNonNodePanes(t *testing.T) {
 	resolved := resolvePanes(panes, pt, ss)
 	if len(resolved) != 0 {
 		t.Fatalf("expected 0 resolved for non-node pane, got %d", len(resolved))
+	}
+}
+
+func TestResolvePanes_AcceptsOpencodePaneCommand(t *testing.T) {
+	panes := []tmuxPane{
+		{paneID: "%1", panePID: 100, sessName: "ocs", winIdx: "1",
+			paneTitle: "OC | hello", paneCommand: "opencode"},
+	}
+	ss := sessions(ses("s1", "hello", "/a"))
+	pt := procTable{byPID: map[int]procEntry{}, children: map[int][]int{}}
+
+	resolved := resolvePanes(panes, pt, ss)
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved, got %d", len(resolved))
+	}
+	if resolved[0].sessionID != "s1" || resolved[0].method != "title" {
+		t.Fatalf("got (%q, %q), want (s1, title)", resolved[0].sessionID, resolved[0].method)
 	}
 }

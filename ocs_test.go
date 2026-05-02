@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -244,5 +245,66 @@ func TestToggleMode(t *testing.T) {
 	}
 	if toggleMode(model{mode: "tmux"}) != "all" {
 		t.Error("toggleMode from tmux should return all")
+	}
+}
+
+func TestStateRefreshMsgIgnoresStaleMode(t *testing.T) {
+	m := model{
+		mode:     "tmux",
+		sessions: []Session{{ID: "s1", Title: "one", Updated: 1, Directory: "/a"}},
+		states:   map[string]sessionState{"s1": stateLinked},
+	}
+
+	updated, cmd := m.Update(stateRefreshMsg{
+		mode:   "all",
+		states: map[string]sessionState{"s1": stateDetected},
+	})
+	if cmd != nil {
+		t.Fatal("expected stale refresh to return no command")
+	}
+
+	got := updated.(model)
+	if got.states["s1"] != stateLinked {
+		t.Fatalf("state overwritten by stale mode refresh: got %v, want %v", got.states["s1"], stateLinked)
+	}
+	if got.mode != "tmux" {
+		t.Fatalf("mode changed: got %q, want tmux", got.mode)
+	}
+}
+
+func TestHandleCloseTmuxKeyRequiresLinkedState(t *testing.T) {
+	sess := Session{ID: "s1", Title: "one", Directory: "/a"}
+	baseList := list.New([]list.Item{sessionItem{session: sess}}, newSessionDelegate(darkTheme), 20, 5)
+	baseList.Select(0)
+
+	tests := []struct {
+		name     string
+		state    sessionState
+		wantOpen bool
+	}{
+		{name: "linked session can close", state: stateLinked, wantOpen: true},
+		{name: "detected session cannot close", state: stateDetected, wantOpen: false},
+		{name: "missing session cannot close", state: stateNone, wantOpen: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := model{
+				list:   baseList,
+				states: map[string]sessionState{sess.ID: tt.state},
+			}
+
+			updated, _ := m.handleCloseTmuxKey()
+			got := updated.(model)
+			if tt.wantOpen {
+				if got.state != stateConfirmingCloseTmux || got.closeTmuxSessionID != sess.ID {
+					t.Fatalf("expected close confirmation for %v, got state=%v id=%q", tt.state, got.state, got.closeTmuxSessionID)
+				}
+				return
+			}
+			if got.state == stateConfirmingCloseTmux || got.closeTmuxSessionID != "" {
+				t.Fatalf("unexpected close confirmation for %v", tt.state)
+			}
+		})
 	}
 }

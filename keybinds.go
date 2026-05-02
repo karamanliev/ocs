@@ -503,7 +503,7 @@ func (m model) handleCloseTmuxKey() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	st := m.states[sess.ID]
-	if st == stateNone {
+	if st != stateLinked {
 		return m, nil
 	}
 	m.state = stateConfirmingCloseTmux

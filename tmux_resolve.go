@@ -9,22 +9,16 @@ import (
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
-// Tmux pane metadata
-// ---------------------------------------------------------------------------
-
-// tmuxPane holds parsed data from a single tmux pane including its process ID.
 type tmuxPane struct {
 	paneID      string
 	panePID     int
 	sessName    string
 	winIdx      string
-	ocsTag      string // @ocs_session_id, may be empty or stale
+	ocsTag      string
 	paneTitle   string
 	paneCommand string
 }
 
-// listTmuxPanes queries all tmux panes in a single call.
 func listTmuxPanes(tmuxPath string) ([]tmuxPane, error) {
 	const sep = "\x7f"
 	format := strings.Join([]string{
@@ -64,24 +58,18 @@ func listTmuxPanes(tmuxPath string) ([]tmuxPane, error) {
 	return panes, nil
 }
 
-// ---------------------------------------------------------------------------
-// Process table: built once from /proc, queried per pane via pane_pid
-// ---------------------------------------------------------------------------
-
 type procEntry struct {
 	pid     int
 	ppid    int
-	cmdline string // null bytes replaced with spaces
+	cmdline string
 	cwd     string
 }
 
-// procTable maps pid -> procEntry and ppid -> list of child pids.
 type procTable struct {
 	byPID    map[int]procEntry
 	children map[int][]int
 }
 
-// buildProcTable scans /proc once and builds a complete process table.
 func buildProcTable() procTable {
 	pt := procTable{
 		byPID:    make(map[int]procEntry),
@@ -101,7 +89,6 @@ func buildProcTable() procTable {
 		}
 		pe := procEntry{pid: pid}
 
-		// Read ppid from /proc/pid/stat (field 4).
 		if stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid)); err == nil {
 			pe.ppid = parsePPID(string(stat))
 		}
@@ -137,13 +124,11 @@ func parsePPID(stat string) int {
 	return ppid
 }
 
-// paneProc holds the opencode process info found for a specific pane.
 type paneProc struct {
-	sessionID string // from -s <id>, may be empty
+	sessionID string
 	cwd       string
 }
 
-// findPaneProc walks descendants of panePID to find a live opencode process.
 func (pt procTable) findPaneProc(panePID int) paneProc {
 	var result paneProc
 	var walk func(pid int)
@@ -168,13 +153,8 @@ func (pt procTable) findPaneProc(panePID int) paneProc {
 	return result
 }
 
-// ---------------------------------------------------------------------------
-// Title resolution
-// ---------------------------------------------------------------------------
-
 const paneTitlePrefix = "OC | "
 
-// parsePaneTitle extracts the session title from a tmux pane title.
 func parsePaneTitle(paneTitle string) (string, bool) {
 	if !strings.HasPrefix(paneTitle, paneTitlePrefix) {
 		return "", false
@@ -183,7 +163,6 @@ func parsePaneTitle(paneTitle string) (string, bool) {
 	return title, title != ""
 }
 
-// titleMatch holds the result of matching a pane title to known sessions.
 type titleMatch struct {
 	parseable  bool
 	candidates []Session
@@ -209,10 +188,6 @@ func (m titleMatch) hasID(id string) bool {
 	return false
 }
 
-// resolveTitle matches a tmux pane title against the session list.
-// Exactly one candidate (even truncated) is considered authoritative.
-// Multiple candidates are narrowed by tmux session basename but remain
-// ambiguous if more than one survives.
 func resolveTitle(paneTitle, tmuxSessName string, sessions []Session) titleMatch {
 	title, ok := parsePaneTitle(paneTitle)
 	if !ok {
@@ -239,7 +214,6 @@ func resolveTitle(paneTitle, tmuxSessName string, sessions []Session) titleMatch
 		return match
 	}
 
-	// Narrow by tmux session basename.
 	var narrowed []Session
 	for _, s := range match.candidates {
 		if filepath.Base(s.Directory) == tmuxSessName {
@@ -252,28 +226,13 @@ func resolveTitle(paneTitle, tmuxSessName string, sessions []Session) titleMatch
 	return match
 }
 
-// ---------------------------------------------------------------------------
-// Pane-centric resolver: the single source of truth
-// ---------------------------------------------------------------------------
-
-// resolvedPane is the output of resolving a single tmux pane to a session.
 type resolvedPane struct {
 	pane      tmuxPane
 	sessionID string
-	method    string // "title", "proc", "tag", "cwd", ""
+	method    string
 }
 
-// resolvePanes runs the full pane-centric resolution pipeline.
-//
-// For each pane with pane_current_command == "node":
-//  1. Inspect descendants of pane_pid for a live opencode process (proc -s, cwd)
-//  2. Resolve title candidates
-//  3. Apply priority:
-//     a. Authoritative title (exactly one candidate): trust title
-//     b. Ambiguous title: trust proc -s if it is one of the candidates
-//     c. Ambiguous title: trust tag if it is one of the candidates
-//     d. Bare pane (no parseable title): proc -s, then tag, then cwd
-func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolvedPane {
+func sessionDirInfo(sessions []Session) (map[string]string, map[string]int) {
 	dirToMostRecent := make(map[string]string, len(sessions))
 	dirSessionCount := make(map[string]int, len(sessions))
 	for _, s := range sessions {
@@ -282,10 +241,24 @@ func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolved
 			dirToMostRecent[s.Directory] = s.ID
 		}
 	}
+	return dirToMostRecent, dirSessionCount
+}
+
+func isOpencodePaneCommand(command string) bool {
+	switch filepath.Base(command) {
+	case "node", "opencode", ".ocv":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolvedPane {
+	dirToMostRecent, _ := sessionDirInfo(sessions)
 
 	var resolved []resolvedPane
 	for _, p := range panes {
-		if p.paneCommand != "node" {
+		if !isOpencodePaneCommand(p.paneCommand) {
 			continue
 		}
 
@@ -294,11 +267,9 @@ func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolved
 		r := resolvedPane{pane: p}
 
 		if id, ok := title.uniqueID(); ok {
-			// Case 1: authoritative title (one candidate, truncated or not).
 			r.sessionID = id
 			r.method = "title"
 		} else if title.parseable {
-			// Case 2: ambiguous title, use proc -s or tag to narrow.
 			if proc.sessionID != "" && title.hasID(proc.sessionID) {
 				r.sessionID = proc.sessionID
 				r.method = "proc"
@@ -307,7 +278,6 @@ func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolved
 				r.method = "tag"
 			}
 		} else {
-			// Case 3: bare pane (no parseable title).
 			if proc.sessionID != "" {
 				r.sessionID = proc.sessionID
 				r.method = "proc"
@@ -315,7 +285,6 @@ func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolved
 				r.sessionID = p.ocsTag
 				r.method = "tag"
 			} else if proc.cwd != "" {
-				// cwd fallback: only for bare panes, only most-recent session.
 				if id, ok := dirToMostRecent[proc.cwd]; ok {
 					r.sessionID = id
 					r.method = "cwd"
@@ -330,21 +299,13 @@ func resolvePanes(panes []tmuxPane, pt procTable, sessions []Session) []resolved
 	return resolved
 }
 
-// ---------------------------------------------------------------------------
-// Public API used by getSessionStates and findTmuxWindow
-// ---------------------------------------------------------------------------
-
-// getTmuxPaneStates populates result with session states detected via tmux.
 func getTmuxPaneStates(tmuxPath string, sessions []Session, result map[string]sessionState) {
 	panes, err := listTmuxPanes(tmuxPath)
 	if err != nil {
 		return
 	}
 	pt := buildProcTable()
-	dirSessionCount := make(map[string]int, len(sessions))
-	for _, s := range sessions {
-		dirSessionCount[s.Directory]++
-	}
+	_, dirSessionCount := sessionDirInfo(sessions)
 
 	for _, r := range resolvePanes(panes, pt, sessions) {
 		st := stateLinked
@@ -364,10 +325,6 @@ func getTmuxPaneStates(tmuxPath string, sessions []Session, result map[string]se
 	}
 }
 
-// findTmuxWindow locates a tmux window running opencode for the given session.
-//
-// Uses the pane-centric resolver, then falls back to a global /proc cwd scan
-// for sessions not reachable via any pane.
 func findTmuxWindow(tmuxPath, id string, sessions []Session) (string, string, bool) {
 	if id == "" {
 		return "", "", false
@@ -383,7 +340,6 @@ func findTmuxWindow(tmuxPath, id string, sessions []Session) (string, string, bo
 		if r.sessionID != id {
 			continue
 		}
-		// Retag the pane when resolution is authoritative or exact proc.
 		if r.method == "title" || r.method == "proc" {
 			if r.pane.ocsTag != id {
 				_ = exec.Command(tmuxPath, "set-option", "-p", "-t",
@@ -393,15 +349,9 @@ func findTmuxWindow(tmuxPath, id string, sessions []Session) (string, string, bo
 		return r.pane.sessName, r.pane.winIdx, true
 	}
 
-	// Final fallback: global /proc cwd match (for bare panes that the
-	// resolver missed, e.g., opencode running outside any tmux pane that
-	// has TMUX_PANE set).
-	var targetSess Session
-	for _, s := range sessions {
-		if s.ID == id {
-			targetSess = s
-			break
-		}
+	targetSess, ok := sessionByID(sessions, id)
+	if !ok {
+		return "", "", false
 	}
 	isMostRecent := true
 	for _, s := range sessions {
@@ -426,7 +376,6 @@ func findTmuxWindow(tmuxPath, id string, sessions []Session) (string, string, bo
 		if pe.cwd != targetSess.Directory {
 			continue
 		}
-		// Read TMUX_PANE from environment.
 		environ, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pe.pid))
 		if err != nil {
 			continue

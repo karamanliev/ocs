@@ -39,17 +39,36 @@ func newSessionInDir(cmd, dir string) {
 	}
 }
 
-// NOTE: findTmuxWindow and getTmuxPaneStates live in tmux_resolve.go.
-
-// sanitizeTmuxSessionName replaces characters that tmux uses as target
-// separators (. : / \) with underscores so that session names work safely
-// in target specifications like "session:window.pane".
 func sanitizeTmuxSessionName(name string) string {
 	if name == "" || name == "." || name == "/" {
 		return "default"
 	}
 	r := strings.NewReplacer("/", "_", "\\", "_", ".", "_", ":", "_")
 	return r.Replace(name)
+}
+
+func ensureTmuxSession(tmuxPath, sessionName, dir string) error {
+	if exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() == nil {
+		return nil
+	}
+	c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
+	c.Stderr = os.Stderr
+	return c.Run()
+}
+
+func nextTmuxWindowTarget(tmuxPath, sessionName string) string {
+	out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
+	maxIdx := -1
+	for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
+			maxIdx = n
+		}
+	}
+	return fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
 }
 
 func attachTmux(tmuxPath, sessionName string) {
@@ -81,7 +100,6 @@ func ctrlTmux(agentPath, id, dir, title string, sessions []Session) {
 		return
 	}
 
-	// If this exact session is already in a tmux window, focus it.
 	if targetSess, winIdx, found := findTmuxWindow(tmuxPath, id, sessions); found {
 		if err := exec.Command(tmuxPath, "select-window", "-t", targetSess+":"+winIdx).Run(); err != nil {
 			fmt.Fprintf(os.Stderr, "ocs: select-window failed: %v\n", err)
@@ -90,30 +108,13 @@ func ctrlTmux(agentPath, id, dir, title string, sessions []Session) {
 		return
 	}
 
-	// Not found: create a window in a session named after the directory.
 	sessionName := sanitizeTmuxSessionName(filepath.Base(dir))
-
-	if exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() != nil {
-		c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
-		c.Stderr = os.Stderr
-		if err := c.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
-			return
-		}
+	if err := ensureTmuxSession(tmuxPath, sessionName, dir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+		return
 	}
 
-	out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
-	maxIdx := -1
-	for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
-			maxIdx = n
-		}
-	}
-	winTarget := fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
+	winTarget := nextTmuxWindowTarget(tmuxPath, sessionName)
 	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-n", tmuxWindowName(title), "-c", dir, "--", agentPath, "-s", id)
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
@@ -121,7 +122,6 @@ func ctrlTmux(agentPath, id, dir, title string, sessions []Session) {
 		return
 	}
 
-	// Tag the new pane so we can find it later without /proc scanning.
 	paneOut, _ := exec.Command(tmuxPath, "list-panes", "-t", winTarget, "-F", "#{pane_id}").Output()
 	if paneID := strings.TrimSpace(string(paneOut)); paneID != "" {
 		if err := exec.Command(tmuxPath, "set-option", "-p", "-t", paneID, "@ocs_session_id", id).Run(); err != nil {
@@ -140,28 +140,12 @@ func ctrlTmuxNew(agentPath, dir string) {
 	}
 
 	sessionName := sanitizeTmuxSessionName(filepath.Base(dir))
-
-	if exec.Command(tmuxPath, "has-session", "-t", sessionName).Run() != nil {
-		c := exec.Command(tmuxPath, "new-session", "-ds", sessionName, "-c", dir)
-		c.Stderr = os.Stderr
-		if err := c.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
-			return
-		}
+	if err := ensureTmuxSession(tmuxPath, sessionName, dir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating tmux session: %v\n", err)
+		return
 	}
 
-	out, _ := exec.Command(tmuxPath, "list-windows", "-t", sessionName, "-F", "#{window_index}").Output()
-	maxIdx := -1
-	for _, s := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			continue
-		}
-		if n, err := strconv.Atoi(s); err == nil && n > maxIdx {
-			maxIdx = n
-		}
-	}
-	winTarget := fmt.Sprintf("%s:%d", sessionName, maxIdx+1)
+	winTarget := nextTmuxWindowTarget(tmuxPath, sessionName)
 	c := exec.Command(tmuxPath, "new-window", "-t", winTarget, "-n", "opencode", "-c", dir, "--", agentPath)
 	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
