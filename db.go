@@ -14,6 +14,11 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// NOTE: tmux pane-centric detection is in tmux_resolve.go.
+// This file keeps: session types, DB helpers, sessionState, cmdline helpers,
+// getSessionStates (orchestrator), getProcStates (non-tmux fallback), and
+// DB mutation functions (fork, copy, etc.).
+
 type Session struct {
 	ID        string
 	Title     string
@@ -120,218 +125,14 @@ func extractSessionIDFromCmdline(cmdline string) string {
 	return ""
 }
 
-// paneTitlePrefix is set by opencode when a session is loaded.
-const paneTitlePrefix = "OC | "
 
-// parsePaneTitle extracts the session title from a tmux pane title.
-// Returns the title and true if the pane has a loaded session ("OC | ..."),
-// or empty string and false otherwise.
-func parsePaneTitle(paneTitle string) (string, bool) {
-	if !strings.HasPrefix(paneTitle, paneTitlePrefix) {
-		return "", false
-	}
-	title := paneTitle[len(paneTitlePrefix):]
-	return title, title != ""
-}
-
-type paneTitleMatch struct {
-	parseable  bool
-	truncated  bool
-	candidates []Session
-}
-
-func (m paneTitleMatch) hasSessionID(id string) bool {
-	for _, s := range m.candidates {
-		if s.ID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func (m paneTitleMatch) uniqueSessionID() (string, bool) {
-	if !m.parseable || m.truncated || len(m.candidates) != 1 {
-		return "", false
-	}
-	return m.candidates[0].ID, true
-}
-
-// resolvePaneTitle matches a tmux pane title against known sessions.
-//
-// Titles truncated with "..." are always treated as ambiguous, even if they
-// only match one session today. For duplicate exact titles, we narrow the
-// candidate set by tmux session basename when possible, but only consider the
-// result unique if exactly one candidate remains.
-func resolvePaneTitle(paneTitle, tmuxSessName string, sessions []Session) paneTitleMatch {
-	title, ok := parsePaneTitle(paneTitle)
-	if !ok {
-		return paneTitleMatch{}
-	}
-
-	match := paneTitleMatch{parseable: true}
-	match.truncated = strings.HasSuffix(title, "...")
-	if match.truncated {
-		title = strings.TrimSuffix(title, "...")
-	}
-
-	for _, s := range sessions {
-		if match.truncated {
-			if strings.HasPrefix(s.Title, title) {
-				match.candidates = append(match.candidates, s)
-			}
-		} else if s.Title == title {
-			match.candidates = append(match.candidates, s)
-		}
-	}
-
-	if len(match.candidates) <= 1 {
-		return match
-	}
-
-	var narrowed []Session
-	for _, s := range match.candidates {
-		if filepath.Base(s.Directory) == tmuxSessName {
-			narrowed = append(narrowed, s)
-		}
-	}
-	if len(narrowed) > 0 {
-		match.candidates = narrowed
-	}
-
-	return match
-}
-
-// paneTitleMatchesSession checks whether a tmux pane title could belong to the
-// given session. Handles truncated titles ("...") via prefix matching.
-func paneTitleMatchesSession(paneTitle string, sess Session) bool {
-	return resolvePaneTitle(paneTitle, filepath.Base(sess.Directory), []Session{sess}).hasSessionID(sess.ID)
-}
-
-// matchSessionByTitle returns a unique, authoritative session ID for a pane
-// title. Truncated titles and duplicates stay ambiguous and return false.
-func matchSessionByTitle(paneTitle, tmuxSessName string, sessions []Session) (string, bool) {
-	return resolvePaneTitle(paneTitle, tmuxSessName, sessions).uniqueSessionID()
-}
-
-type procPaneInfo struct {
-	sessionID string
-	cwd       string
-}
-
-// listProcPanes builds a best-effort pane -> running opencode process map using
-// TMUX_PANE from the process environment plus the process cmdline/cwd.
-func listProcPanes() map[string]procPaneInfo {
-	result := make(map[string]procPaneInfo)
-	entries, err := os.ReadDir("/proc")
-	if err != nil {
-		return result
-	}
-
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		if _, err := strconv.Atoi(e.Name()); err != nil {
-			continue
-		}
-		pid := e.Name()
-		data, err := os.ReadFile(fmt.Sprintf("/proc/%s/cmdline", pid))
-		if err != nil {
-			continue
-		}
-		cmdline := strings.ReplaceAll(string(data), "\x00", " ")
-		if !isOpencodeCmdline(cmdline) {
-			continue
-		}
-
-		environ, err := os.ReadFile(fmt.Sprintf("/proc/%s/environ", pid))
-		if err != nil {
-			continue
-		}
-
-		paneID := ""
-		for _, env := range strings.Split(string(environ), "\x00") {
-			if strings.HasPrefix(env, "TMUX_PANE=") {
-				paneID = strings.TrimPrefix(env, "TMUX_PANE=")
-				break
-			}
-		}
-		if paneID == "" {
-			continue
-		}
-
-		info := result[paneID]
-		if info.sessionID == "" {
-			info.sessionID = extractSessionIDFromCmdline(cmdline)
-		}
-		if info.cwd == "" {
-			if procDir, err := os.Readlink(fmt.Sprintf("/proc/%s/cwd", pid)); err == nil {
-				info.cwd = procDir
-			}
-		}
-		result[paneID] = info
-	}
-
-	return result
-}
-
-// tmuxPaneInfo holds parsed data from a single tmux pane.
-type tmuxPaneInfo struct {
-	paneID      string
-	sessName    string
-	winIdx      string
-	ocsTag      string // @ocs_session_id value, may be empty
-	paneTitle   string
-	paneCommand string
-}
-
-// listTmuxPanes queries all tmux panes in a single call and returns parsed info.
-// The format string uses a DEL (\x7f) separator to safely handle spaces in titles.
-func listTmuxPanes(tmuxPath string) ([]tmuxPaneInfo, error) {
-	const sep = "\x7f"
-	format := strings.Join([]string{
-		"#{pane_id}",
-		"#{session_name}",
-		"#{window_index}",
-		"#{@ocs_session_id}",
-		"#{pane_title}",
-		"#{pane_current_command}",
-	}, sep)
-	out, err := exec.Command(tmuxPath, "list-panes", "-a", "-F", format).Output()
-	if err != nil {
-		return nil, err
-	}
-
-	var panes []tmuxPaneInfo
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		fields := strings.Split(line, sep)
-		if len(fields) < 6 {
-			continue
-		}
-		panes = append(panes, tmuxPaneInfo{
-			paneID:      fields[0],
-			sessName:    fields[1],
-			winIdx:      fields[2],
-			ocsTag:      fields[3],
-			paneTitle:   fields[4],
-			paneCommand: fields[5],
-		})
-	}
-	return panes, nil
-}
 
 // getSessionStates detects which sessions have a live opencode process.
 //
-// In tmux mode, detection priority:
-//  1. Unique non-truncated pane title
-//  2. Ambiguous title resolved by exact proc -s, then exact pane tag
-//  3. Bare pane resolved by exact proc -s, then exact pane tag
-//  4. /proc scan fallback: -s <id> (stateLinked), cwd match (stateLinked if single session in dir, stateDetected otherwise)
+// In tmux mode, uses the pane-centric resolver (see tmux_resolve.go) plus
+// a /proc cwd fallback for sessions not reachable via any tmux pane.
 //
-// In non-tmux mode, only /proc scan is used (all matches are stateLinked).
+// In non-tmux mode, only /proc scan is used.
 func getSessionStates(sessions []Session, mode string) map[string]sessionState {
 	result := make(map[string]sessionState)
 
@@ -346,49 +147,6 @@ func getSessionStates(sessions []Session, mode string) map[string]sessionState {
 	getProcStates(sessions, mode, result)
 
 	return result
-}
-
-// getTmuxPaneStates populates result with session states detected via tmux panes.
-func getTmuxPaneStates(tmuxPath string, sessions []Session, result map[string]sessionState) {
-	panes, err := listTmuxPanes(tmuxPath)
-	if err != nil {
-		return
-	}
-	procPanes := listProcPanes()
-
-	for _, p := range panes {
-		if p.paneCommand != "node" {
-			continue
-		}
-		proc := procPanes[p.paneID]
-		title := resolvePaneTitle(p.paneTitle, p.sessName, sessions)
-
-		// Detection priority:
-		//  1. Non-truncated unique title: authoritative, ignore tag (may be stale)
-		//  2. Truncated/duplicate title (ambiguous): prefer exact proc -s, then tag
-		//  3. No parseable title (bare "OpenCode"): exact proc -s, then tag
-		if id, ok := title.uniqueSessionID(); ok {
-			upgrade(result, id, stateLinked)
-			continue
-		}
-		if title.parseable {
-			if proc.sessionID != "" && title.hasSessionID(proc.sessionID) {
-				upgrade(result, proc.sessionID, stateLinked)
-				continue
-			}
-			if p.ocsTag != "" && title.hasSessionID(p.ocsTag) {
-				upgrade(result, p.ocsTag, stateLinked)
-			}
-			continue
-		}
-		if proc.sessionID != "" {
-			upgrade(result, proc.sessionID, stateLinked)
-			continue
-		}
-		if p.ocsTag != "" {
-			upgrade(result, p.ocsTag, stateLinked)
-		}
-	}
 }
 
 // getProcStates scans /proc for opencode processes and populates result.
