@@ -42,11 +42,13 @@ func parseOptionalBoolFlag(args []string, i *int, name string) bool {
 func parseArgs() (startTmux, noPreview, grouped bool, theme string) {
 	preview := true
 	grouped = true
+	tmuxExplicit := false
 	for i := 1; i < len(os.Args); i++ {
 		arg := os.Args[i]
 		switch {
 		case arg == "--tmux" || strings.HasPrefix(arg, "--tmux="):
 			startTmux = parseOptionalBoolFlag(os.Args, &i, "--tmux")
+			tmuxExplicit = true
 		case arg == "--preview" || strings.HasPrefix(arg, "--preview="):
 			preview = parseOptionalBoolFlag(os.Args, &i, "--preview")
 		case arg == "--grouped" || strings.HasPrefix(arg, "--grouped="):
@@ -62,7 +64,7 @@ func parseArgs() (startTmux, noPreview, grouped bool, theme string) {
 			theme = strings.SplitN(arg, "=", 2)[1]
 		case arg == "--help":
 			fmt.Fprintf(os.Stderr, "Usage: %s [flags]\n\nFlags:\n", os.Args[0])
-			fmt.Fprintln(os.Stderr, "  --tmux=bool     start in tmux mode, default false")
+			fmt.Fprintln(os.Stderr, "  --tmux=bool     start in tmux mode, auto-detected when inside tmux")
 			fmt.Fprintln(os.Stderr, "  --preview=bool  show preview pane, default true")
 			fmt.Fprintln(os.Stderr, "  --grouped=bool  group by path, default true")
 			fmt.Fprintln(os.Stderr, "  --theme value  force theme: dark or light (default auto-detect)")
@@ -71,6 +73,9 @@ func parseArgs() (startTmux, noPreview, grouped bool, theme string) {
 			fmt.Fprintf(os.Stderr, "ocs: unknown flag %s\n", arg)
 			os.Exit(1)
 		}
+	}
+	if !tmuxExplicit && os.Getenv("TMUX") != "" {
+		startTmux = true
 	}
 	noPreview = !preview
 	return
